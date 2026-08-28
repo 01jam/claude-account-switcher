@@ -2,6 +2,7 @@ import {
   Button,
   Dialog,
   Heading,
+  Label,
   ListBox,
   ListBoxItem,
   Modal,
@@ -131,15 +132,13 @@ function LanguageSetting({
         onLanguageChange(key === AUTO ? null : (key as Lang))
       }
     >
-      <div>
-        <strong>{t("settings.language_title")}</strong>
-        <p className="muted">{t("settings.language_hint")}</p>
-      </div>
+      <Label>{t("settings.language_title")}</Label>
       <Button className="select-trigger">
         <SelectValue />
         <IconChevronDown size={16} />
       </Button>
-      <Popover className="popover">
+      <p className="muted">{t("settings.language_hint")}</p>
+      <Popover className="popover popover-select">
         <ListBox className="menu">
           <ListBoxItem className="menu-item" id={AUTO} textValue={auto}>
             {auto}

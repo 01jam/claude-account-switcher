@@ -108,6 +108,34 @@ code {
   outline-offset: -2px;
 }
 
+/* Fixed to the window rather than sitting in the footer: it belongs to the
+   frame, so the list scrolling underneath must not move it. Above the list
+   fades so they do not cover it, below .overlay so a dialog does. */
+.resize-grip {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.resize-grip::after {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 10px;
+  height: 10px;
+  background: var(--border);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  content: "";
+}
+
+.resize-grip:hover::after {
+  background: var(--muted);
+}
+
 .win-control-close[data-hovered] {
   color: #fff;
   background: var(--danger);
@@ -664,15 +692,34 @@ code {
   transform: translateX(13px);
 }
 
-/* The language row is the one setting that is not a switch: same frame, with a
-   dropdown where the toggle would be. */
+/* The language row is the one setting that is not a switch: same frame, but the
+   dropdown takes the full width, label above and hint underneath. */
 .setting-select {
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   cursor: default;
 }
 
-.setting-select > div:first-child {
-  flex: 1;
+.setting-select label {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+/* The gap already spaces the hint; .setting p adds a margin the row no longer
+   needs. */
+.setting-select p {
+  margin: 0;
+}
+
+.setting-select .select-trigger {
+  width: 100%;
+  justify-content: space-between;
+}
+
+/* Match the dropdown to the trigger now that the trigger spans the dialog. */
+.popover-select {
+  width: var(--trigger-width);
 }
 
 .select-trigger {
@@ -740,7 +787,10 @@ code {
   background: var(--bg);
 }
 
+/* Portalled to the body like the overlay, so it has to outrank it to show above
+   a dialog's own select. */
 .popover {
+  z-index: 20;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -770,8 +820,11 @@ code {
   color: var(--danger);
 }
 
+/* Above the list fades: those are positioned with a z-index of their own, and a
+   positioned element without one loses to them wherever it sits in the DOM. */
 .overlay {
   position: fixed;
+  z-index: 10;
   inset: 0;
   display: flex;
   align-items: center;

@@ -29,6 +29,7 @@ import {
   type ToggleKey,
 } from "./api";
 import AccountList from "./components/AccountList";
+import ResizeGrip from "./components/ResizeGrip";
 import SettingsDialog from "./components/SettingsDialog";
 import WindowControls from "./components/WindowControls";
 import { useWindowDrag } from "./useWindowDrag";
@@ -154,6 +155,8 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         </Button>
         <WindowControls />
       </div>
+
+      <ResizeGrip />
 
       <header className="app-header">
         <div>

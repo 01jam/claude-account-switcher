@@ -1,0 +1,860 @@
+:root {
+  --accent: #c25e3e;
+  --accent-fg: #ffffff;
+  --bg: #faf9f7;
+  --surface: #ffffff;
+  --surface-2: #f2efeb;
+  --border: #e2ddd6;
+  --text: #1f1b18;
+  --muted: #756d64;
+  --danger: #b3261e;
+  --danger-soft: #fdeceb;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgb(31 27 24 / 0.06), 0 8px 24px rgb(31 27 24 / 0.08);
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #d97757;
+    --accent-fg: #1a1512;
+    --bg: #17140f;
+    --surface: #211d18;
+    --surface-2: #2b261f;
+    --border: #3a342c;
+    --text: #f0ebe4;
+    --muted: #9c9287;
+    --danger: #f2857c;
+    --danger-soft: #3a201e;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* The window itself never scrolls: only the account list does, so the header
+   and the footer actions stay put. */
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100vh;
+  padding: 18px;
+  overflow: hidden;
+}
+
+/* Window bar ------------------------------------------------------------- */
+
+/* The app carries no system decorations, so this is the only way to move the
+   window or put it away. Full-bleed against the shell's padding: a control
+   against the window's own corner is a target you cannot miss. */
+.titlebar {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  justify-content: flex-end;
+  height: 32px;
+  margin: -18px -18px -6px;
+}
+
+.win-controls {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  /* Set apart from the app's own commands: closing the window is not one. */
+  margin-left: 10px;
+}
+
+.win-control {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  outline: none;
+}
+
+.win-control[data-hovered] {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.win-control[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.win-control-close[data-hovered] {
+  color: #fff;
+  background: var(--danger);
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-header-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.subtitle,
+.muted {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* Buttons ---------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.btn[data-hovered] {
+  background: var(--border);
+}
+
+.btn[data-pressed] {
+  transform: translateY(0.5px);
+}
+
+.btn[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.btn-primary[data-hovered] {
+  filter: brightness(1.07);
+  background: var(--accent);
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.btn-ghost[data-hovered] {
+  background: var(--surface-2);
+}
+
+.btn-icon {
+  padding: 6px;
+  border-color: transparent;
+}
+
+.btn-sm {
+  padding: 4px 9px;
+  font-size: 12.5px;
+}
+
+/* Banners ---------------------------------------------------------------- */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.banner p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.banner-info {
+  justify-content: space-between;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.banner-error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+  word-break: break-word;
+}
+
+/* Auto-switch status banner ----------------------------------------------- */
+
+/* Always present, so its state is readable at a glance rather than something
+   to go looking for; the whole strip opens the settings. */
+.auto-banner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.auto-banner span {
+  flex: 1;
+}
+
+.auto-banner-cog {
+  flex: none;
+  opacity: 0.65;
+}
+
+.auto-banner[data-hovered] {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.auto-banner[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.auto-banner-on {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+}
+
+/* Account list ----------------------------------------------------------- */
+
+/* Holds the scrolling list plus the two fades that hide where it is clipped:
+   scrolled content dissolves into the background instead of ending on a cut. */
+.list-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.list-wrap::before,
+.list-wrap::after {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  left: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.list-wrap::before {
+  top: 0;
+  height: 14px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+}
+
+.list-wrap::after {
+  bottom: 0;
+  height: 18px;
+  background: linear-gradient(to top, var(--bg), transparent);
+}
+
+.accounts {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  /* min-height lets the list shrink below its content so it, and not the
+     window, is what scrolls. The vertical padding parks the first and last
+     card clear of the fades. */
+  min-height: 0;
+  padding: 16px 2px 20px;
+  overflow-y: auto;
+  /* Hidden, not disabled: the list still scrolls by wheel, drag and keyboard.
+     The fades at both ends are what signal there is more to see. */
+  scrollbar-width: none;
+  outline: none;
+}
+
+.accounts::-webkit-scrollbar {
+  display: none;
+}
+
+/* Rows hold sliders and a drag handle, so the card is not a single click
+   target: switching is the explicit button underneath. */
+.account {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: default;
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.account[data-hovered] {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.account[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.account[data-disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account-avatar {
+  display: flex;
+  color: var(--muted);
+}
+
+.account-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-name {
+  font-weight: 550;
+}
+
+.account-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.account-active .account-avatar {
+  color: var(--accent);
+}
+
+.account[data-drop-target] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.account[data-dragging] {
+  opacity: 0.4;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.account-grip {
+  display: flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: grab;
+  outline: none;
+}
+
+.account-grip[data-hovered] {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.account-grip[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.account-usage-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* The primary action of a card, full width under the meters. */
+.account-use {
+  justify-content: center;
+  width: 100%;
+}
+
+.account-current {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+/* Usage meters ------------------------------------------------------------ */
+
+.account-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.meter-label {
+  color: var(--muted);
+}
+
+.meter-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+}
+
+.meter-value-hit {
+  color: var(--danger);
+}
+
+.meter-threshold {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* The track carries the fill and the thumb; padding keeps the thumb from
+   overflowing the card at 1% and 100%. */
+.meter-track {
+  position: relative;
+  height: 18px;
+  cursor: pointer;
+}
+
+.meter-rail,
+.meter-fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 7px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+}
+
+.meter-rail {
+  right: 0;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.meter-fill {
+  background: var(--accent);
+  transition: width 300ms ease;
+}
+
+.meter-fill-hit {
+  background: var(--danger);
+}
+
+.meter-thumb {
+  top: 50%;
+  width: 4px;
+  height: 18px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--surface);
+  cursor: ew-resize;
+  outline: none;
+}
+
+.meter-thumb[data-dragging] {
+  background: var(--accent);
+}
+
+/* Auto-switch off: the threshold is still adjustable, but nothing acts on it,
+   so the marker recedes. It comes back on hover and while dragging. */
+.meter-thumb-idle {
+  opacity: 0.2;
+  transition: opacity 120ms ease;
+}
+
+.meter-thumb-idle[data-hovered],
+.meter-thumb-idle[data-dragging],
+.meter-thumb-idle[data-focus-visible] {
+  opacity: 1;
+}
+
+.meter-thumb[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.meter[data-disabled] .meter-thumb {
+  background: var(--muted);
+}
+
+.meter-foot {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  min-height: 1em;
+}
+
+/* Settings ---------------------------------------------------------------- */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  outline: none;
+}
+
+.setting[data-hovered] {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.setting p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.setting strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.setting[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.setting[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.switch-indicator {
+  flex: none;
+  width: 32px;
+  height: 19px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition: background 150ms ease;
+}
+
+.switch-indicator::before {
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 2px;
+  border-radius: 999px;
+  background: var(--surface);
+  content: "";
+  transition: transform 150ms ease;
+}
+
+.setting[data-selected] .switch-indicator {
+  background: var(--accent);
+}
+
+.setting[data-selected] .switch-indicator::before {
+  transform: translateX(13px);
+}
+
+/* The language row is the one setting that is not a switch: same frame, with a
+   dropdown where the toggle would be. */
+.setting-select {
+  align-items: center;
+  cursor: default;
+}
+
+.setting-select > div:first-child {
+  flex: 1;
+}
+
+.select-trigger {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.select-trigger[data-hovered] {
+  background: color-mix(in srgb, var(--text) 8%, var(--surface-2));
+}
+
+.select-trigger[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.select-trigger[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.menu-item[data-selected] {
+  color: var(--accent);
+  font-weight: 550;
+}
+
+.empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 28px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty p {
+  margin: 0;
+  max-width: 34ch;
+}
+
+/* Footer, menu, dialogs --------------------------------------------------- */
+
+.app-footer {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.popover {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.menu {
+  padding: 4px;
+  outline: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.menu-item[data-focused] {
+  background: var(--surface-2);
+}
+
+.menu-item-danger {
+  color: var(--danger);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 0.4);
+}
+
+.overlay[data-entering] {
+  animation: fade 150ms ease-out;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  width: 100%;
+  max-width: 380px;
+}
+
+.dialog {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  outline: none;
+}
+
+.dialog h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.steps li > .btn {
+  display: flex;
+  margin-top: 6px;
+  width: fit-content;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field label {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  user-select: text;
+}
+
+.input[data-focused] {
+  border-color: var(--accent);
+  outline: none;
+}

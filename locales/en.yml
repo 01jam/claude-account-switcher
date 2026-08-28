@@ -1,0 +1,108 @@
+# English UI strings. See `locales/it.yml` for how these files are used.
+
+app:
+  name: Claude Account Switcher
+  title: Claude accounts
+  loading: Loading…
+  refresh: Refresh
+  settings: Settings
+  close: Close
+  cancel: Cancel
+  save: Save
+  delete: Delete
+  ok: Ok
+
+window:
+  minimize: Minimise
+  close: Close to the bar
+
+status:
+  logged_out: No account signed in
+  unknown_account: unknown account
+  active: "Active: {name}{plan} · {count} saved"
+
+tray:
+  no_accounts: No saved accounts
+  open_window: Open window…
+  quit: Quit
+  no_active_account: Claude · no active account
+  near_threshold: Near threshold
+
+usage:
+  five_hour: 5-hour session
+  seven_day: Week
+  five_hour_short: 5h
+  seven_day_short: 7d
+  threshold_caption: " · threshold {value}%"
+  threshold_label: "{window} threshold"
+  no_data: "—"
+  resetting: resetting
+  resets_in_minutes: resets in {minutes} min
+  resets_in_hours: resets in {hours}h
+  resets_in_hours_minutes: resets in {hours}h {minutes}m
+  resets_in_days: resets in {days}d {hours}h
+  retry_soon: " — retrying shortly"
+  retry_at: " — retrying at {time} ({minutes} min)"
+
+autoswitch:
+  banner_on: Auto-switch on
+  banner_off: Auto-switch off
+  reason: "{window} at {used}% (threshold {threshold}%)"
+  switched: "Switched to “{to}”: {from} reached {reason}."
+  exhausted: Threshold reached ({reason}) but no other account is available.
+
+accounts:
+  list_label: Saved accounts
+  empty_title: No saved accounts.
+  empty_hint: If you are already signed in with `claude`, save the current login; then add the second account.
+  reorder: Reorder {name}
+  actions_for: Actions for {name}
+  rename: Rename
+  rename_title: Rename account
+  name_field: Name
+  delete_title: Delete “{name}”?
+  delete_body: The credentials saved for this account will be removed. You will have to sign in again to add it back.
+  token_expired: token expired
+  used_today: used today
+  used_yesterday: yesterday
+  used_days_ago: "{days} days ago"
+  in_use: Account in use
+  switch_to: Switch to this account
+  default_label: Account
+
+login:
+  unsaved_title: Login not saved
+  unsaved_body: "{name} is signed in but is not one of the saved accounts."
+  unsaved_fallback: An account
+  refresh_token: Refresh token
+  add: Add account
+  add_title: Add an account
+  step_logout: Sign out of the current account (it stays saved, you do not lose it).
+  logout: Sign out
+  step_terminal: Open a terminal and complete the login in the browser.
+  open_terminal: Open terminal
+  step_save: Come back here and save the new account.
+  save_account: Save account
+  terminal_hint: Done signing in? Go back to Claude Account Switcher and press "Save account".
+
+settings:
+  title: Settings
+  auto_switch_title: Auto-switch
+  auto_switch_hint: When a meter passes its threshold, move to the next account in list order.
+  autostart_title: Launch at login
+  autostart_hint: The app starts on its own when you sign in, so the icon is always in the bar.
+  start_hidden_title: Start in the bar
+  start_hidden_hint: "On launch it does not open the window: only the icon stays up top."
+  language_title: Language
+  language_hint: Applies straight away, no restart needed.
+  language_auto: Automatic ({name})
+
+errors:
+  no_login: no login found — run `claude` and sign in before saving
+  no_terminal: no terminal emulator found — open one yourself and run `claude`
+  empty_name: the name cannot be empty
+  autostart: "cannot set launch at login: {error}"
+  rate_limited: too many requests to the API
+  no_token: no token saved for this account
+  invalid_token: invalid or expired token
+  api_status: the API answered {status}

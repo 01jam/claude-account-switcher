@@ -1,0 +1,116 @@
+# Italian UI strings.
+#
+# One file per language, shared by both halves of the app: Vite compiles it into
+# the window's bundle, and the Rust side embeds it for the tray and the errors it
+# raises. Placeholders are `{name}` and are substituted the same way on both
+# sides, so a string can move between them without being rewritten.
+#
+# Adding a language: copy this file to `locales/<tag>.yml`, translate the values,
+# and register the tag in `src/i18n.ts` and `src-tauri/src/i18n.rs`.
+
+app:
+  name: Claude Account Switcher
+  title: Account Claude
+  loading: Caricamento…
+  refresh: Aggiorna
+  settings: Impostazioni
+  close: Chiudi
+  cancel: Annulla
+  save: Salva
+  delete: Elimina
+  ok: Ok
+
+window:
+  minimize: Riduci a icona
+  close: Chiudi nella barra
+
+status:
+  logged_out: Nessun account connesso
+  unknown_account: account sconosciuto
+  active: "Attivo: {name}{plan} · {count} salvati"
+
+tray:
+  no_accounts: Nessun account salvato
+  open_window: Apri finestra…
+  quit: Esci
+  no_active_account: Claude · nessun account attivo
+  near_threshold: Vicino alla soglia
+
+usage:
+  five_hour: Sessione 5 ore
+  seven_day: Settimana
+  five_hour_short: 5h
+  seven_day_short: 7g
+  threshold_caption: " · soglia {value}%"
+  threshold_label: Soglia {window}
+  no_data: "—"
+  resetting: in azzeramento
+  resets_in_minutes: si azzera tra {minutes} min
+  resets_in_hours: si azzera tra {hours}h
+  resets_in_hours_minutes: si azzera tra {hours}h {minutes}m
+  resets_in_days: si azzera tra {days}g {hours}h
+  retry_soon: " — nuovo tentativo a breve"
+  retry_at: " — riprovo alle {time} ({minutes} min)"
+
+autoswitch:
+  banner_on: Switch automatico attivo
+  banner_off: Switch automatico disattivo
+  reason: "{window} al {used}% (soglia {threshold}%)"
+  switched: "Passato a «{to}»: {from} ha raggiunto {reason}."
+  exhausted: Soglia raggiunta ({reason}) ma nessun altro account è disponibile.
+
+accounts:
+  list_label: Account salvati
+  empty_title: Nessun account salvato.
+  empty_hint: Se sei già connesso con `claude`, salva il login corrente; poi aggiungi il secondo account.
+  reorder: Riordina {name}
+  actions_for: Azioni per {name}
+  rename: Rinomina
+  rename_title: Rinomina account
+  name_field: Nome
+  delete_title: Eliminare «{name}»?
+  delete_body: Le credenziali salvate per questo account verranno rimosse. Dovrai rifare il login per riaggiungerlo.
+  token_expired: token scaduto
+  used_today: usato oggi
+  used_yesterday: ieri
+  used_days_ago: "{days} giorni fa"
+  in_use: Account in uso
+  switch_to: Passa a questo account
+  default_label: Account
+
+login:
+  unsaved_title: Login non salvato
+  unsaved_body: "{name} è connesso ma non è tra quelli salvati."
+  unsaved_fallback: Un account
+  refresh_token: Aggiorna token
+  add: Aggiungi account
+  add_title: Aggiungi un account
+  step_logout: Disconnetti l'account corrente (resta salvato, non lo perdi).
+  logout: Disconnetti
+  step_terminal: Apri un terminale e completa il login nel browser.
+  open_terminal: Apri terminale
+  step_save: Torna qui e salva il nuovo account.
+  save_account: Salva account
+  terminal_hint: Login completato? Torna a Claude Account Switcher e premi "Salva account".
+
+settings:
+  title: Impostazioni
+  auto_switch_title: Switch automatico
+  auto_switch_hint: Quando un contatore supera la sua soglia, passa all'account successivo nell'ordine della lista.
+  autostart_title: Avvia all'accesso
+  autostart_hint: L'app parte da sola quando accedi, così l'icona è sempre nella barra.
+  start_hidden_title: Avvia nella barra
+  start_hidden_hint: "All'avvio non apre la finestra: resta solo l'icona in alto."
+  language_title: Lingua
+  language_hint: Cambia subito, senza riavviare l'app.
+  language_auto: Automatica ({name})
+
+errors:
+  no_login: nessun login trovato — esegui `claude` e accedi prima di salvare
+  no_terminal: nessun emulatore di terminale trovato — aprine uno ed esegui `claude`
+  empty_name: il nome non può essere vuoto
+  autostart: "non riesco a impostare l'avvio automatico: {error}"
+  rate_limited: troppe richieste all'API
+  no_token: nessun token salvato per questo account
+  invalid_token: token non valido o scaduto
+  api_status: l'API ha risposto {status}

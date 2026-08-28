@@ -1,0 +1,54 @@
+[package]
+name = "claude-switch"
+version = "0.1.0"
+description = "Switch between multiple Claude Code accounts"
+authors = ["Hund Studio"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "claude_switch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+dirs = "6"
+# rustls rather than native-tls: one less system library to have installed.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "http2",
+] }
+tokio = { version = "1", features = ["time"] }
+# Writes the XDG autostart entry (and the equivalent elsewhere) rather than us
+# hand-rolling the desktop file.
+tauri-plugin-autostart = "2"
+# System language, for the automatic UI-language choice. Reads the platform API
+# rather than $LANG, which GUI sessions on macOS do not set.
+sys-locale = "0.3"
+serde_yaml_ng = "0.10.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+# macOS keeps the Claude Code login in the Keychain instead of a file. Going
+# through the framework rather than the `security` CLI keeps the token off the
+# process list.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+# Two things the cross-platform layer cannot express on GTK: blocking the window
+# manager's own fullscreen, and the NVIDIA rendering workaround. Pinned to the
+# version Tauri itself links, or the window handle would be a different type.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"

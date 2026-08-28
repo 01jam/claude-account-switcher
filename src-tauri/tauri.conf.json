@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Claude Account Switcher",
+  "version": "0.1.0",
+  "identifier": "studio.hund.claude-switch",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Claude Account Switcher",
+        "width": 520,
+        "height": 640,
+        "minWidth": 420,
+        "minHeight": 480,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns"
+    ],
+    "category": "Utility",
+    "shortDescription": "Switch between multiple Claude Code accounts",
+    "longDescription": "Store credentials for several Claude accounts and switch the active one from a window or the system tray.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

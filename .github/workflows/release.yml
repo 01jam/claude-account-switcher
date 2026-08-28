@@ -1,0 +1,136 @@
+name: Release
+
+# Tag a version and everything else happens on its own:
+#   npm version 0.2.0 && git push --follow-tags
+# Also runnable by hand against an existing tag, which is how the Linux-only
+# v0.1.0 got its macOS packages after the fact.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach packages to"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  # Creates the release only if it isn't there already, so a hand-written
+  # release body survives a re-run instead of being regenerated over.
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, leaving its notes alone."
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 rather than latest: the binary links against that runner's
+          # glibc, and building on the newest Ubuntu makes packages that will
+          # not start on anything older.
+          - platform: ubuntu-22.04
+            args: ""
+          # One universal binary instead of two jobs: runs native on both
+          # Apple silicon and Intel.
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev \
+            build-essential curl wget file libssl-dev pkg-config
+
+      - run: npm ci
+
+      # macOS packages are unsigned: no Apple Developer certificate in this
+      # repo. Gatekeeper will refuse them on first launch until the user
+      # allows the app under System Settings > Privacy & Security.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+          includeRelease: false
+          includeDebug: false
+
+      # Tauri names its output "Claude Account Switcher_0.1.0_amd64.deb".
+      # The spaces become %20 in the download URL, so flatten them first.
+      - name: Collect and rename packages
+        shell: bash
+        run: |
+          mkdir -p dist-packages
+          find src-tauri/target -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' \) \
+            -path '*/release/bundle/*' -print0 |
+          while IFS= read -r -d '' f; do
+            new=$(basename "$f" | sed 's/^Claude Account Switcher/claude-account-switcher/')
+            cp "$f" "dist-packages/$new"
+            echo "$new"
+          done
+          test -n "$(ls -A dist-packages)" || { echo "No packages were produced"; exit 1; }
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" dist-packages/* --clobber
+
+  # Runs last so the checksum file covers every platform's packages, including
+  # ones added by an earlier run of this workflow.
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rebuild SHA256SUMS from the published assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir assets && cd assets
+          gh release download "$TAG" --pattern '*'
+          # Drop any previous checksum file so it is not hashed into the new one.
+          rm -f SHA256SUMS
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber

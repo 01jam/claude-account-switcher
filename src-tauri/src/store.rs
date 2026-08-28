@@ -177,6 +177,12 @@ pub fn save(id: &str, meta: &Meta, credentials: &Value, account: &Value) -> Resu
     Ok(())
 }
 
+/// Replace an account's stored tokens, leaving its metadata alone. What a
+/// renewal writes: the credentials changed, nothing else about the account did.
+pub fn save_credentials(id: &str, credentials: &Value) -> Result<()> {
+    write_json(&profile_dir(id)?.join("credentials.json"), credentials, true)
+}
+
 pub fn save_meta(id: &str, meta: &Meta) -> Result<()> {
     write_json(&profile_dir(id)?.join("meta.json"), meta, false)
 }

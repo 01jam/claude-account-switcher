@@ -196,6 +196,12 @@ pub async fn auto_switch(cache: &usage::Cache) -> Result<AutoSwitch> {
     };
 
     let current = usage::for_profile(cache, &active_id, false).await?;
+    // A rate-limit cooldown keeps the last known numbers on screen for as long
+    // as an hour. Fine for a card that says how old they are; no basis at all
+    // for moving the user off an account whose window may have reset since.
+    if !current.is_actionable() {
+        return Ok(AutoSwitch::Idle);
+    }
     let Some(hit) = current.hits(
         active_meta.five_hour_threshold,
         active_meta.seven_day_threshold,

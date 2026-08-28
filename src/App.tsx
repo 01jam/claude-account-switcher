@@ -27,6 +27,7 @@ import {
   type ProfileUsage,
   type Settings,
   type ToggleKey,
+  type TokenOutcome,
 } from "./api";
 import AccountList from "./components/AccountList";
 import ResizeGrip from "./components/ResizeGrip";
@@ -105,6 +106,14 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
     const unlistenExhausted = listen<string>("auto-switch-exhausted", (e) => {
       setNotice(t("autoswitch.exhausted", { reason: e.payload }));
     });
+    const unlistenToken = listen<TokenOutcome>("token-refresh-failed", (e) => {
+      setError(
+        t("tokens.failed", {
+          name: e.payload.label,
+          error: e.payload.error ?? "",
+        }),
+      );
+    });
 
     const onFocus = () => {
       reload();
@@ -119,6 +128,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       unlistenChanged.then((f) => f());
       unlistenSwitched.then((f) => f());
       unlistenExhausted.then((f) => f());
+      unlistenToken.then((f) => f());
       window.removeEventListener("focus", onFocus);
       clearInterval(timer);
     };
@@ -171,6 +181,10 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
             onPress={() =>
               run(async () => {
                 await api.syncActiveProfile();
+                // Renewing first is what makes the numbers reachable at all for
+                // an account whose token has expired — and pressing this button
+                // has to visibly do something either way.
+                setNotice(tokenNotice(t, await api.refreshTokens()));
                 await loadUsage(true);
               })
             }
@@ -235,6 +249,12 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
           busy={busy}
           autoSwitch={settings?.autoSwitch ?? false}
           onSwitch={(id) => run(() => api.switchProfile(id))}
+          onRefreshToken={(id) =>
+            run(async () => {
+              await api.refreshProfileToken(id);
+              await loadUsage(true);
+            })
+          }
           onRename={(id, label) => run(() => api.renameProfile(id, label))}
           onDelete={(id) => run(() => api.deleteProfile(id))}
           onThresholds={(id, fiveHour, sevenDay) =>
@@ -291,6 +311,26 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       />
     </main>
   );
+}
+
+/** What a renewal pass has to say for itself. Reporting "nothing was due" is
+ *  the point: a Refresh that answers with silence reads as a broken button. */
+function tokenNotice(t: Translate, outcomes: TokenOutcome[]): string {
+  const failed = outcomes.find((o) => o.status === "failed");
+  if (failed) {
+    return t("tokens.failed", {
+      name: failed.label,
+      error: failed.error ?? "",
+    });
+  }
+  const renewed = outcomes.filter((o) => o.status === "renewed");
+  if (renewed.length === 1) {
+    return t("tokens.renewed_one", { name: renewed[0].label });
+  }
+  if (renewed.length > 1) {
+    return t("tokens.renewed_many", { count: renewed.length });
+  }
+  return t("tokens.all_fresh");
 }
 
 function statusLine(

@@ -23,6 +23,7 @@ import {
   IconDotsVertical,
   IconGripVertical,
   IconPencil,
+  IconRefreshAlert,
   IconTrash,
   IconUserCircle,
   IconUsersGroup,
@@ -39,6 +40,8 @@ type Props = {
   /** Off means the thresholds are set but nothing acts on them. */
   autoSwitch: boolean;
   onSwitch: (id: string) => void;
+  /** Renew this account's OAuth token now, whatever its expiry says. */
+  onRefreshToken: (id: string) => void;
   onRename: (id: string, label: string) => void;
   onDelete: (id: string) => void;
   onThresholds: (id: string, fiveHour: number, sevenDay: number) => void;
@@ -51,6 +54,7 @@ export default function AccountList({
   busy,
   autoSwitch,
   onSwitch,
+  onRefreshToken,
   onRename,
   onDelete,
   onThresholds,
@@ -155,12 +159,17 @@ export default function AccountList({
                       className="menu"
                       onAction={(key) => {
                         if (key === "rename") setEditing(profile);
+                        if (key === "refresh") onRefreshToken(profile.id);
                         if (key === "delete") setConfirming(profile);
                       }}
                     >
                       <MenuItem className="menu-item" id="rename">
                         <IconPencil size={16} />
                         {t("accounts.rename")}
+                      </MenuItem>
+                      <MenuItem className="menu-item" id="refresh">
+                        <IconRefreshAlert size={16} />
+                        {t("accounts.refresh_token")}
                       </MenuItem>
                       <MenuItem
                         className="menu-item menu-item-danger"
@@ -194,6 +203,13 @@ export default function AccountList({
                   onCommit={(v) => onThresholds(profile.id, fh, v)}
                 />
               </div>
+
+              {!entry?.error && entry?.stale && (
+                <p className="account-usage-note">
+                  {staleLine(t, entry.usage?.fetchedAt)}
+                  {retryLine(t, lang, entry.retryAt)}
+                </p>
+              )}
 
               {entry?.error && (
                 <p className="account-usage-error">
@@ -325,6 +341,16 @@ function RenameDialog({
       </Modal>
     </ModalOverlay>
   );
+}
+
+// How old the numbers on the card are. Only ever shown when they are past their
+// TTL: fresh ones need no caption.
+function staleLine(t: Translate, fetchedAt: number | undefined) {
+  if (!fetchedAt) return null;
+  const minutes = Math.round((Date.now() - fetchedAt) / 60_000);
+  return minutes < 60
+    ? t("usage.stale_minutes", { minutes })
+    : t("usage.stale_hours", { hours: Math.round(minutes / 60) });
 }
 
 // The API's 429 carries no deadline of its own, so what is shown is when this

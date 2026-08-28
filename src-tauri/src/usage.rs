@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::i18n;
+use crate::oauth;
 use crate::store;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -27,6 +28,12 @@ pub const WARN_MARGIN: f64 = 5.0;
 /// How long a fetched snapshot is served from cache. The underlying numbers move
 /// slowly, and this keeps a busy UI from hammering the endpoint.
 const CACHE_TTL_MS: u64 = 300_000;
+
+/// How old a reading may be and still be worth acting on. Well past the TTL,
+/// because a cooldown is allowed to keep numbers on screen — but a five-hour
+/// window that has since reset still reads as full in the cache, and rotating
+/// accounts on that is a switch the user never needed.
+pub const DECISION_MAX_AGE_MS: u64 = 900_000;
 
 /// After a 429 the endpoint is left alone for this long. Usage is a nicety —
 /// never a reason to keep pushing against a rate limit.
@@ -51,6 +58,12 @@ pub struct Usage {
 }
 
 impl Usage {
+    /// Fresh enough to move accounts on. Displaying an old reading is fine —
+    /// the card says how old it is — but deciding with one is not.
+    pub fn is_actionable(&self) -> bool {
+        store::now_ms().saturating_sub(self.fetched_at) <= DECISION_MAX_AGE_MS
+    }
+
     /// The worst of the two windows against the given thresholds, if either has
     /// data. `None` means "nothing to judge on".
     pub fn hits(&self, five_hour_threshold: f64, seven_day_threshold: f64) -> Option<Hit> {
@@ -113,6 +126,11 @@ pub struct ProfileUsage {
     pub error: Option<String>,
     /// Epoch ms of the next allowed request while a rate-limit cooldown runs.
     pub retry_at: Option<u64>,
+    /// These numbers are past their TTL and were kept only because the endpoint
+    /// could not be asked again. Without saying so the window looks freshly
+    /// loaded while showing hours-old figures — which is exactly how a spent
+    /// account can appear to have room left.
+    pub stale: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +163,19 @@ impl std::fmt::Display for RateLimited {
 }
 
 impl std::error::Error for RateLimited {}
+
+/// The token was refused. Distinguishable because it is the one usage failure
+/// this app can actually do something about: renew and ask again.
+#[derive(Debug)]
+struct Unauthorized;
+
+impl std::fmt::Display for Unauthorized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", i18n::t("errors.invalid_token"))
+    }
+}
+
+impl std::error::Error for Unauthorized {}
 
 /// `Retry-After` is either a count of seconds or an HTTP date; only the first
 /// form is worth handling here, and even that is rarely populated.
@@ -198,7 +229,7 @@ async fn fetch(token: &str) -> Result<Usage> {
 
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(anyhow!(i18n::t("errors.invalid_token")));
+        return Err(Unauthorized.into());
     }
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         return Err(RateLimited {
@@ -314,6 +345,18 @@ impl Cache {
         self.save();
     }
 
+    /// Drop a running cooldown, on the user's own initiative.
+    ///
+    /// The refusal it came from was answered with a token that has since been
+    /// renewed, so it says nothing about the request that follows — and a
+    /// Refresh that cannot even try is indistinguishable from a broken button.
+    pub fn clear_cooldown(&self) {
+        if let Ok(mut until) = self.cooldown_until.lock() {
+            *until = 0;
+        }
+        self.save();
+    }
+
     pub fn forget(&self, id: &str) {
         if let Ok(mut map) = self.entries.lock() {
             map.remove(id);
@@ -357,25 +400,60 @@ pub async fn for_profile(cache: &Cache, id: &str, force: bool) -> Result<Usage> 
     }
 
     let active = store::active()?;
-    let credentials = credentials_for(id, active.as_deref())?;
-    let token = access_token_of(&credentials)
-        .ok_or_else(|| anyhow!(i18n::t("errors.no_token")))?;
+    let mut credentials = credentials_for(id, active.as_deref())?;
+
+    // An expired token buys nothing but a 401, and this app can renew it
+    // itself — so it does, rather than leaving the meter empty until someone
+    // next runs `claude` under that account.
+    if oauth::due(&credentials, 0) {
+        match oauth::renew(id, active.as_deref(), 0).await {
+            Ok(Some(renewed)) => credentials = renewed,
+            Ok(None) => {}
+            // Usage is a nicety: a renewal that failed is worth a line in the
+            // log and an attempt with what we have, not an empty card.
+            Err(e) => eprintln!("token renewal for {id}: {e:#}"),
+        }
+    }
+
+    let token =
+        access_token_of(&credentials).ok_or_else(|| anyhow!(i18n::t("errors.no_token")))?;
 
     match fetch(&token).await {
         Ok(usage) => {
             cache.put(id, &usage);
             Ok(usage)
         }
-        Err(e) => {
-            if let Some(limited) = e.downcast_ref::<RateLimited>() {
-                cache.start_cooldown(limited.cooldown());
-                if let Some(stale) = cache.get_any(id) {
-                    return Ok(stale);
+        Err(e) if e.downcast_ref::<Unauthorized>().is_some() => {
+            // `expiresAt` said the token was good and the endpoint disagreed;
+            // the endpoint is the one that knows. One renewal, one retry.
+            let Ok(Some(renewed)) = oauth::renew(id, active.as_deref(), oauth::FORCE).await
+            else {
+                return Err(e);
+            };
+            let token =
+                access_token_of(&renewed).ok_or_else(|| anyhow!(i18n::t("errors.no_token")))?;
+            match fetch(&token).await {
+                Ok(usage) => {
+                    cache.put(id, &usage);
+                    Ok(usage)
                 }
+                Err(e) => fall_back(cache, id, e),
             }
-            Err(e)
+        }
+        Err(e) => fall_back(cache, id, e),
+    }
+}
+
+/// What a failed fetch leaves the caller with: a rate limit starts the cooldown
+/// and hands back whatever was last known, anything else is just the error.
+fn fall_back(cache: &Cache, id: &str, e: anyhow::Error) -> Result<Usage> {
+    if let Some(limited) = e.downcast_ref::<RateLimited>() {
+        cache.start_cooldown(limited.cooldown());
+        if let Some(stale) = cache.get_any(id) {
+            return Ok(stale);
         }
     }
+    Err(e)
 }
 
 #[cfg(test)]
@@ -468,6 +546,20 @@ mod tests {
         assert!(idle.approaching(2.0, 2.0, WARN_MARGIN).is_none());
     }
 
+    /// The cache outlives a cooldown by design, and the auto-switch has to tell
+    /// "spent" from "was spent, hours ago".
+    #[test]
+    fn an_old_reading_is_shown_but_not_acted_on() {
+        let mut usage = parse(SAMPLE);
+        usage.fetched_at = store::now_ms();
+        assert!(usage.is_actionable());
+
+        usage.fetched_at = store::now_ms() - DECISION_MAX_AGE_MS - 1;
+        assert!(!usage.is_actionable());
+        // Still perfectly readable — the card keeps showing it.
+        assert_eq!(usage.five_hour.as_ref().unwrap().utilization, 3.0);
+    }
+
     #[test]
     fn a_window_with_no_data_never_triggers_a_switch() {
         let usage = parse(r#"{"five_hour": null, "seven_day": null}"#);
@@ -483,17 +575,21 @@ pub async fn for_all(cache: &Cache, force: bool) -> Result<Vec<ProfileUsage>> {
         let entry = match for_profile(cache, &id, force).await {
             Ok(usage) => ProfileUsage {
                 id,
+                // Past its TTL means it was kept, not fetched: the cooldown, or
+                // an account whose numbers could not be refreshed this round.
+                stale: store::now_ms().saturating_sub(usage.fetched_at) >= CACHE_TTL_MS,
                 usage: Some(usage),
                 error: None,
-                retry_at: None,
+                // Set whether or not this account failed: the cooldown is
+                // global, so this is when any of them can come back.
+                retry_at: cache.retry_at(),
             },
             Err(e) => ProfileUsage {
                 id,
                 usage: None,
                 error: Some(format!("{e:#}")),
-                // Set for every account: the cooldown is global, so this is
-                // when the numbers can come back.
                 retry_at: cache.retry_at(),
+                stale: false,
             },
         };
         out.push(entry);

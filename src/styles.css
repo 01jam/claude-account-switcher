@@ -469,6 +469,16 @@ code {
   outline-offset: 1px;
 }
 
+/* Kept numbers, said out loud. Quieter than an error — nothing is broken, the
+   figures are simply older than they look. */
+.account-usage-note {
+  width: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
 .account-usage-error {
   display: flex;
   align-items: center;

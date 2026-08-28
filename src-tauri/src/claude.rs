@@ -8,7 +8,8 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// Keys in `~/.claude.json` that identify the logged-in account. Everything
 /// else in that file (projects, history, tips) is machine state and must
@@ -88,12 +89,12 @@ pub fn read_credentials() -> Result<Option<Value>> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn write_credentials(value: &Value) -> Result<()> {
+fn write_credentials_unlocked(value: &Value) -> Result<()> {
     write_json_atomic(&credentials_path()?, value, true)
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn remove_credentials() -> Result<()> {
+fn remove_credentials_unlocked() -> Result<()> {
     remove_credentials_file()
 }
 
@@ -129,7 +130,7 @@ pub fn read_credentials() -> Result<Option<Value>> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn write_credentials(value: &Value) -> Result<()> {
+fn write_credentials_unlocked(value: &Value) -> Result<()> {
     match credential_backend() {
         Backend::Keychain => keychain::write(value),
         Backend::File => write_json_atomic(&credentials_path()?, value, true),
@@ -137,7 +138,7 @@ pub fn write_credentials(value: &Value) -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn remove_credentials() -> Result<()> {
+fn remove_credentials_unlocked() -> Result<()> {
     // Both, unconditionally: a logout that leaves a copy behind in the store it
     // did not pick would silently log the user back in.
     keychain::remove()?;
@@ -194,6 +195,125 @@ mod keychain {
         let _ = delete_generic_password(SERVICE, &account());
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Writing next to a running session
+// ---------------------------------------------------------------------------
+
+/// How long to keep trying for the lock before giving up on this attempt.
+/// Claude Code holds it only for the milliseconds a write takes.
+const LOCK_WAIT: Duration = Duration::from_secs(5);
+
+/// A lock whose mtime has stopped moving belongs to a process that is gone.
+/// Claude Code's own threshold — and the reason a session killed mid-refresh
+/// leaves the CLI saying "another Claude Code process is refreshing it" until
+/// something clears the directory it left behind.
+const LOCK_STALE: Duration = Duration::from_secs(15);
+
+/// The lock Claude Code takes before writing its login is `proper-lockfile`'s,
+/// so this one is too: a *directory* next to the file it guards, where `mkdir`
+/// is the atom that decides who holds it. Matching the protocol exactly is the
+/// whole point — the app and a running session then take turns instead of
+/// landing on each other, whichever of the two gets there first.
+fn lock_dir() -> Result<PathBuf> {
+    Ok(home()?.join(".claude").join(".storage-write.lock"))
+}
+
+/// Held for as long as the guard lives, released when it drops.
+pub struct WriteLock {
+    dir: PathBuf,
+}
+
+impl Drop for WriteLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.dir);
+    }
+}
+
+/// Someone else is mid-write. Not a failure — a reason to come back, which is
+/// what the token keeper does a few seconds later.
+#[derive(Debug)]
+pub struct Busy;
+
+impl std::fmt::Display for Busy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", crate::i18n::t("errors.login_busy"))
+    }
+}
+
+impl std::error::Error for Busy {}
+
+fn lock_is_stale(dir: &Path, after: Duration) -> bool {
+    fs::metadata(dir)
+        .and_then(|m| m.modified())
+        .map(|mtime| mtime.elapsed().map(|age| age > after).unwrap_or(false))
+        .unwrap_or(false)
+}
+
+fn try_lock(dir: &PathBuf, stale_after: Duration) -> Result<bool> {
+    if let Some(parent) = dir.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    match fs::create_dir(dir) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            if !lock_is_stale(dir, stale_after) {
+                return Ok(false);
+            }
+            // Exactly what the CLI does with a lock nobody came back for, and
+            // the one thing that unsticks a session killed mid-refresh.
+            let _ = fs::remove_dir(dir);
+            Ok(fs::create_dir(dir).is_ok())
+        }
+        Err(e) => Err(e).context("cannot take the login write lock"),
+    }
+}
+
+/// Take the lock, backing off the way the CLI does rather than spinning.
+pub fn lock_writes(wait: Duration) -> Result<WriteLock> {
+    let dir = lock_dir()?;
+    let deadline = Instant::now() + wait;
+    let mut delay = Duration::from_millis(100);
+    loop {
+        if try_lock(&dir, LOCK_STALE)? {
+            return Ok(WriteLock { dir });
+        }
+        if Instant::now() >= deadline {
+            return Err(Busy.into());
+        }
+        std::thread::sleep(delay);
+        delay = (delay * 2).min(Duration::from_secs(1));
+    }
+}
+
+/// Read-modify-write the live login while holding the lock.
+///
+/// `update` is handed the credentials as they are *inside* the lock, which need
+/// not be what the caller last read: a session may have rotated them in the
+/// meantime, and returning `None` is how the caller stands down when it did.
+pub fn update_credentials<F>(wait: Duration, update: F) -> Result<Option<Value>>
+where
+    F: FnOnce(Option<Value>) -> Result<Option<Value>>,
+{
+    let _lock = lock_writes(wait)?;
+    let Some(next) = update(read_credentials()?)? else {
+        return Ok(None);
+    };
+    write_credentials_unlocked(&next)?;
+    Ok(Some(next))
+}
+
+/// Replace the live login. Locked, because a switch that lands in the middle of
+/// a session's own write is how one of the two ends up half applied.
+pub fn write_credentials(value: &Value) -> Result<()> {
+    let _lock = lock_writes(LOCK_WAIT)?;
+    write_credentials_unlocked(value)
+}
+
+pub fn remove_credentials() -> Result<()> {
+    let _lock = lock_writes(LOCK_WAIT)?;
+    remove_credentials_unlocked()
 }
 
 pub fn read_config() -> Result<Value> {
@@ -259,4 +379,56 @@ pub fn expires_at_of(credentials: &Value) -> Option<u64> {
         .get("claudeAiOauth")?
         .get("expiresAt")?
         .as_u64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A directory of our own: these tests exercise the protocol, and the real
+    /// lock sits next to a login nobody should be poking at from a test.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("claude-switch-{name}-{}.lock", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn a_free_lock_is_taken() {
+        let dir = scratch("free");
+        assert!(try_lock(&dir, LOCK_STALE).expect("no error"));
+        assert!(dir.exists());
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn a_lock_someone_is_holding_is_refused() {
+        let dir = scratch("held");
+        fs::create_dir_all(&dir).expect("held by someone else");
+        assert!(!try_lock(&dir, LOCK_STALE).expect("no error"));
+        let _ = fs::remove_dir(&dir);
+    }
+
+    /// The state a session killed mid-refresh leaves behind: the directory is
+    /// there, its owner is not. Claude Code stops being able to renew until
+    /// somebody clears it, so this app does.
+    #[test]
+    fn an_abandoned_lock_is_cleared_and_taken() {
+        let dir = scratch("abandoned");
+        fs::create_dir_all(&dir).expect("left behind");
+        // Any age at all counts as abandoned here, which is the branch under
+        // test; in the app the threshold is Claude Code's own fifteen seconds.
+        assert!(try_lock(&dir, Duration::ZERO).expect("no error"));
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn the_guard_releases_on_drop() {
+        let dir = scratch("guard");
+        assert!(try_lock(&dir, LOCK_STALE).expect("no error"));
+        {
+            let _guard = WriteLock { dir: dir.clone() };
+        }
+        assert!(!dir.exists(), "dropping the guard removes the lock");
+    }
 }

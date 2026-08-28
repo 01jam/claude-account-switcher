@@ -49,6 +49,8 @@ usage:
   resets_in_hours: si azzera tra {hours}h
   resets_in_hours_minutes: si azzera tra {hours}h {minutes}m
   resets_in_days: si azzera tra {days}g {hours}h
+  stale_minutes: "dati di {minutes} min fa"
+  stale_hours: "dati di {hours}h fa"
   retry_soon: " — nuovo tentativo a breve"
   retry_at: " — riprovo alle {time} ({minutes} min)"
 
@@ -66,6 +68,7 @@ accounts:
   reorder: Riordina {name}
   actions_for: Azioni per {name}
   rename: Rinomina
+  refresh_token: Rinnova token
   rename_title: Rinomina account
   name_field: Nome
   delete_title: Eliminare «{name}»?
@@ -93,6 +96,12 @@ login:
   save_account: Salva account
   terminal_hint: Login completato? Torna a Claude Account Switcher e premi "Salva account".
 
+tokens:
+  renewed_one: "Token rinnovato per “{name}”."
+  renewed_many: "{count} token rinnovati."
+  all_fresh: I token sono ancora tutti validi.
+  failed: "Impossibile rinnovare “{name}”: {error}"
+
 settings:
   title: Impostazioni
   auto_switch_title: Switch automatico
@@ -112,5 +121,8 @@ errors:
   autostart: "non riesco a impostare l'avvio automatico: {error}"
   rate_limited: troppe richieste all'API
   no_token: nessun token salvato per questo account
+  no_refresh_token: nessun refresh token salvato per questo account — rifai il login con `claude`
+  refresh_rejected: il refresh token è stato rifiutato — rifai il login con `claude`
+  login_busy: Claude Code sta scrivendo il suo login proprio adesso
   invalid_token: token non valido o scaduto
   api_status: l'API ha risposto {status}

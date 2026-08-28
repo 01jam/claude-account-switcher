@@ -42,6 +42,17 @@ export type ProfileUsage = {
   error: string | null;
   /** Epoch ms of the next allowed request, while rate-limited. */
   retryAt: number | null;
+  /** These numbers are past their TTL and were kept because the endpoint could
+   *  not be asked again — the card has to say so rather than look fresh. */
+  stale: boolean;
+};
+
+/** What one account's token renewal came to. */
+export type TokenOutcome = {
+  id: string;
+  label: string;
+  status: "renewed" | "fresh" | "deferred" | "failed";
+  error: string | null;
 };
 
 export type AutoSwitched = {
@@ -80,6 +91,11 @@ export const api = {
 
   fetchUsage: (force = false) =>
     invoke<ProfileUsage[]>("fetch_usage", { force }),
+  /** Renew every token that is due — the same pass the app runs on its timer. */
+  refreshTokens: () => invoke<TokenOutcome[]>("refresh_tokens"),
+  /** Renew one account now, whatever its expiry says. */
+  refreshProfileToken: (id: string) =>
+    invoke<void>("refresh_profile_token", { id }),
   setThresholds: (id: string, fiveHour: number, sevenDay: number) =>
     invoke<void>("set_thresholds", { id, fiveHour, sevenDay }),
   reorderProfiles: (ids: string[]) =>

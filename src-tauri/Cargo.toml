@@ -26,7 +26,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "http2",
 ] }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
 # Writes the XDG autostart entry (and the equivalent elsewhere) rather than us
 # hand-rolling the desktop file.
 tauri-plugin-autostart = "2"

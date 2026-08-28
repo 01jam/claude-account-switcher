@@ -1,6 +1,7 @@
 mod actions;
 mod claude;
 mod i18n;
+mod oauth;
 mod store;
 mod tray;
 mod usage;
@@ -16,6 +17,14 @@ use usage::{Cache, ProfileUsage};
 /// How often usage is refreshed and the auto-switch re-checked. Matched to the
 /// usage cache TTL: faster than this only produces refused requests.
 const POLL_INTERVAL: Duration = Duration::from_secs(300);
+
+/// How often the token keeper looks at the expiry dates.
+///
+/// Nothing leaves the machine unless a token is actually due, so this can be
+/// far tighter than the usage poll: it is what makes a renewal that a session
+/// held the login lock against land seconds after that session lets go, rather
+/// than at the next five-minute tick.
+const TOKEN_CHECK_INTERVAL: Duration = Duration::from_secs(20);
 
 /// How long after launch the first check runs. Waiting a whole `POLL_INTERVAL`
 /// meant an app opened on an account that is already spent sat there doing
@@ -209,6 +218,40 @@ async fn fetch_usage(
     to_string_err(result)
 }
 
+/// Renew every token that is due, on the user's own initiative.
+///
+/// The same pass the keeper runs on its timer — pressing Refresh should not
+/// have to mean something different from waiting for it.
+#[tauri::command]
+async fn refresh_tokens(
+    app: AppHandle,
+    cache: State<'_, Cache>,
+) -> Result<Vec<oauth::Outcome>, String> {
+    let outcomes = oauth::renew_due(oauth::LIVE_MARGIN_MS, oauth::STORED_MARGIN_MS).await;
+    if outcomes.iter().any(|o| o.status == oauth::Status::Renewed) {
+        // Whatever refusal started a cooldown was answered with a token that no
+        // longer exists, so it says nothing about the request that follows.
+        cache.clear_cooldown();
+    }
+    notify_changed(&app);
+    Ok(outcomes)
+}
+
+/// Renew one account now, whatever its expiry says. The explicit gesture from
+/// an account's own menu, so it does not second-guess the user.
+#[tauri::command]
+async fn refresh_profile_token(
+    app: AppHandle,
+    cache: State<'_, Cache>,
+    id: String,
+) -> Result<(), String> {
+    let active = to_string_err(store::active())?;
+    let result = to_string_err(oauth::renew(&id, active.as_deref(), oauth::FORCE).await);
+    cache.clear_cooldown();
+    notify_changed(&app);
+    result.map(|_| ())
+}
+
 #[tauri::command]
 fn set_thresholds(
     app: AppHandle,
@@ -337,6 +380,49 @@ async fn poll_usage(app: AppHandle) {
     }
 }
 
+/// Keep every saved account's token alive.
+///
+/// Claude Code renews only the login it is running under, and only while it is
+/// running: without this, a stored account's token expires a few hours after
+/// the last switch away from it, its meters go blank, and the auto-switch is
+/// left choosing between accounts it cannot read. Most passes do nothing but
+/// read a handful of expiry dates.
+async fn keep_tokens_fresh(app: AppHandle) {
+    // A failure repeats every pass; the user needs to hear it once.
+    let mut reported: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    loop {
+        let outcomes = oauth::renew_due(oauth::LIVE_MARGIN_MS, oauth::STORED_MARGIN_MS).await;
+
+        for outcome in &outcomes {
+            match outcome.status {
+                oauth::Status::Failed => {
+                    if reported.insert(outcome.id.clone()) {
+                        eprintln!(
+                            "token renewal for {}: {}",
+                            outcome.id,
+                            outcome.error.as_deref().unwrap_or("failed")
+                        );
+                        let _ = app.emit("token-refresh-failed", outcome.clone());
+                    }
+                }
+                // Deferred says nothing yet — the next pass is seconds away.
+                oauth::Status::Deferred => {}
+                _ => {
+                    reported.remove(&outcome.id);
+                }
+            }
+        }
+
+        // The expiry the cards show comes from the store, and a renewal moved it.
+        if outcomes.iter().any(|o| o.status == oauth::Status::Renewed) {
+            notify_changed(&app);
+        }
+
+        tokio::time::sleep(TOKEN_CHECK_INTERVAL).await;
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -364,6 +450,8 @@ pub fn run() {
             logout,
             open_login_terminal,
             fetch_usage,
+            refresh_tokens,
+            refresh_profile_token,
             set_thresholds,
             reorder_profiles,
             get_settings,
@@ -389,6 +477,11 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(poll_usage(handle));
+            // Straight away, with no startup delay: an account whose token
+            // expired while the app was closed is exactly the one whose meters
+            // would otherwise stay empty until something else asked.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(keep_tokens_fresh(handle));
             Ok(())
         })
         .on_window_event(|window, event| match event {

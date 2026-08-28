@@ -41,6 +41,8 @@ usage:
   resets_in_hours: resets in {hours}h
   resets_in_hours_minutes: resets in {hours}h {minutes}m
   resets_in_days: resets in {days}d {hours}h
+  stale_minutes: "numbers from {minutes} min ago"
+  stale_hours: "numbers from {hours}h ago"
   retry_soon: " — retrying shortly"
   retry_at: " — retrying at {time} ({minutes} min)"
 
@@ -58,6 +60,7 @@ accounts:
   reorder: Reorder {name}
   actions_for: Actions for {name}
   rename: Rename
+  refresh_token: Renew token
   rename_title: Rename account
   name_field: Name
   delete_title: Delete “{name}”?
@@ -85,6 +88,12 @@ login:
   save_account: Save account
   terminal_hint: Done signing in? Go back to Claude Account Switcher and press "Save account".
 
+tokens:
+  renewed_one: "Token renewed for “{name}”."
+  renewed_many: "{count} tokens renewed."
+  all_fresh: Every token is still valid.
+  failed: "Cannot renew “{name}”: {error}"
+
 settings:
   title: Settings
   auto_switch_title: Auto-switch
@@ -104,5 +113,8 @@ errors:
   autostart: "cannot set launch at login: {error}"
   rate_limited: too many requests to the API
   no_token: no token saved for this account
+  no_refresh_token: no refresh token saved for this account — sign in again with `claude`
+  refresh_rejected: the refresh token was refused — sign in again with `claude`
+  login_busy: Claude Code is writing its login right now
   invalid_token: invalid or expired token
   api_status: the API answered {status}

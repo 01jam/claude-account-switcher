@@ -55,9 +55,9 @@ app says so and stays put. An account whose usage cannot be read (typically an
 expired token) is treated as usable instead: better to attempt the switch than
 to stall on a network error.
 
-Usage for accounts that are **not** active is read with the stored token: if it
-has expired, those two meters stay empty until you make the account active
-again. Only Claude Code renews tokens, and this app does not do it for it.
+Usage for accounts that are **not** active is read with the stored token — and
+the app keeps that token alive itself, so the meters no longer go blank on an
+account nobody has run `claude` under lately. See below.
 
 The endpoint rate-limits, so requests are kept sparse: a response stays valid
 for 5 minutes, the periodic check runs every 5 minutes and reuses that cache.
@@ -70,11 +70,57 @@ the surest way to earn a `429` and then spend ten minutes with no numbers to
 decide on, auto-switch stalled.
 
 The first check runs 15 seconds after launch, not after five minutes; and
-pressing **Refresh** triggers it too, since they are the same numbers.
+pressing **Refresh** renews whatever tokens are due and then re-reads the
+numbers, since one is what buys the other.
+
+While a cooldown runs, cards carry the age of what they are showing ("numbers
+from 3h ago") and when the app will ask again. Kept numbers that look freshly
+loaded are how a spent account appears to have room left.
+
+The auto-switch will not act on a reading older than 15 minutes. Showing an old
+number is fine — the card says how old it is — but a five-hour window that has
+since reset still reads as full in the cache, and rotating accounts on that is a
+switch nobody asked for.
 
 In the tray menu each account carries both percentages. When a counter comes
 within 5 points of its threshold a `⚠` appears next to the name and the panel
 icon takes a warning badge.
+
+### Renewing the tokens
+
+Claude Code owns the login *flow*, but not the renewal: the refresh token it
+stores was issued to its own public client, so the same grant works from here
+and produces exactly the credentials the CLI would have written. The app runs a
+pass every 20 seconds — a few expiry dates read off disk, and no traffic at all
+unless something is actually due:
+
+- a **stored** account is renewed 30 minutes before it expires. Nothing else
+  reads that file, so there is nobody to race;
+- the **live** login is renewed only within 5 minutes of expiry, the same window
+  Claude Code would refresh in. A renewal rotates the refresh token, and a
+  session that has one in memory re-reads the file before using it — but there
+  is no reason to make it do that while its token is still good.
+
+Renewing the live login **does not require Claude Code to be closed**. The write
+goes through the very lock the CLI takes for its own — `proper-lockfile`
+semantics on `~/.claude/.storage-write.lock`, a directory whose `mkdir` decides
+who holds it — and the file is re-read *inside* the lock: if a session renewed
+first, this app stands down rather than overwriting. A lock whose mtime has
+stopped moving for 15 seconds is treated as abandoned and cleared, which is also
+the cure for Claude Code's own
+
+> Failed to refresh OAuth token: another Claude Code process is refreshing it or
+> exited mid-refresh
+
+left behind by a session that died mid-write. Switching accounts and signing out
+take the same lock.
+
+If a session is holding it right now, the renewal is not forced: it is deferred
+and retried on the next pass, seconds later. And **Renew token** in an account's
+own menu does it immediately, whatever the expiry says.
+
+A refresh token that has been revoked or already spent cannot be renewed by
+anyone — the app says so once, and that account needs a fresh `claude` login.
 
 ### Claude Desktop is not involved
 
@@ -188,8 +234,9 @@ one of the two files and register the tag in `src/i18n.ts` and
 
 ## Caveats
 
-- Switch accounts with Claude Code **closed**: a running session can rewrite
-  `~/.claude.json` and overwrite the switch.
+- Switch accounts with Claude Code **closed**: the credentials are written under
+  the CLI's own lock, but `~/.claude.json` is not covered by it, and a running
+  session can rewrite the account keys there and undo the switch.
 - On Linux the tokens are stored in the clear (as Claude Code itself does) with
   `0600` permissions: this is not a keyring. On macOS the live tokens sit in the
   keychain, but the copies in the app's profiles are still `0600` files — so the

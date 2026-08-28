@@ -25,7 +25,7 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
       - name: Create release if missing
@@ -55,11 +55,11 @@ jobs:
             args: "--target universal-apple-darwin"
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -91,8 +91,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.args }}
-          includeRelease: false
           includeDebug: false
+          # No tagName is passed on purpose: without it the action only builds
+          # and leaves the release alone, which the upload step below handles.
 
       # Tauri names its output "Claude Account Switcher_0.1.0_amd64.deb".
       # The spaces become %20 in the download URL, so flatten them first.

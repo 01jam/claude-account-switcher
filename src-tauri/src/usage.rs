@@ -39,6 +39,19 @@ pub const DECISION_MAX_AGE_MS: u64 = 900_000;
 /// never a reason to keep pushing against a rate limit.
 const COOLDOWN_MS: u64 = 600_000;
 
+/// The longest the app will sit blind, whatever `Retry-After` asks for.
+///
+/// The endpoint answers refusals with a blanket `retry-after: 3600` and is then
+/// perfectly willing twenty minutes later: the hour is a stock number, not a
+/// deadline it holds itself to. Past `DECISION_MAX_AGE_MS` the numbers are no
+/// longer good enough to act on anyway, so that is exactly as long as it is
+/// worth waiting before spending one request to find out.
+const MAX_COOLDOWN_MS: u64 = DECISION_MAX_AGE_MS;
+
+/// How often an explicit Refresh may push through a cooldown. Enough that
+/// holding the button down cannot become a stream of refused requests.
+const OVERRIDE_INTERVAL_MS: u64 = 180_000;
+
 /// One rolling limit window as the UI needs it.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -137,8 +150,7 @@ pub struct ProfileUsage {
 // Fetching
 // ---------------------------------------------------------------------------
 
-/// Distinguishable so a 429 can pause every account at once, not just the one
-/// whose request happened to be refused.
+/// Distinguishable so a refusal pauses the account it was about.
 ///
 /// `retry_after` carries the header's value when the server sends a usable one.
 /// In practice this endpoint answers `retry-after: 0` and a body with no
@@ -153,6 +165,7 @@ impl RateLimited {
         self.retry_after
             .filter(|d| !d.is_zero())
             .unwrap_or(Duration::from_millis(COOLDOWN_MS))
+            .min(Duration::from_millis(MAX_COOLDOWN_MS))
     }
 }
 
@@ -258,9 +271,24 @@ async fn fetch(token: &str) -> Result<Usage> {
 
 #[derive(Default)]
 pub struct Cache {
+    /// Where this cache persists itself, or `None` for one that only lives in
+    /// memory. A cache with nowhere to write is what the tests use: the file is
+    /// a real one in the user's config directory, and a test has no business
+    /// leaving "spent" and "one" in it.
+    path: Option<PathBuf>,
     entries: Mutex<HashMap<String, Usage>>,
-    /// Epoch ms before which no request may be made, set after a 429.
-    cooldown_until: Mutex<u64>,
+    /// Epoch ms before which each account may not be asked again, set from its
+    /// own 429.
+    ///
+    /// Per account rather than app-wide, because the refusal is about the
+    /// account: the endpoint answers for the token it was handed, and one
+    /// account sitting at its own limit has no business blanking the meters of
+    /// the others — which is precisely the account the user is about to switch
+    /// to. The request rate is bounded by the cache TTL and the poll interval,
+    /// not by pausing everything at the first refusal.
+    cooldowns: Mutex<HashMap<String, u64>>,
+    /// When an explicit Refresh last pushed through a cooldown.
+    last_override: Mutex<u64>,
 }
 
 /// The cache as it is written to disk.
@@ -268,7 +296,10 @@ pub struct Cache {
 #[serde(rename_all = "camelCase")]
 struct Persisted {
     entries: HashMap<String, Usage>,
-    cooldown_until: u64,
+    #[serde(default)]
+    cooldowns: HashMap<String, u64>,
+    #[serde(default)]
+    last_override: u64,
 }
 
 fn cache_path() -> Option<PathBuf> {
@@ -287,25 +318,41 @@ impl Cache {
             return Cache::default();
         };
         let Ok(text) = std::fs::read_to_string(&path) else {
-            return Cache::default();
+            return Cache {
+                path: Some(path),
+                ..Cache::default()
+            };
         };
         let saved: Persisted = serde_json::from_str(&text).unwrap_or_default();
         Cache {
+            path: Some(path),
             entries: Mutex::new(saved.entries),
-            cooldown_until: Mutex::new(saved.cooldown_until),
+            // A file written by a version with one app-wide cooldown simply has
+            // no `cooldowns`, so the upgrade starts with a clean slate — which
+            // is the right answer for a deadline nobody can attribute any more.
+            cooldowns: Mutex::new(saved.cooldowns),
+            last_override: Mutex::new(saved.last_override),
         }
     }
 
     /// Best effort: a snapshot that fails to save costs a refetch, nothing more.
     fn save(&self) {
-        let (Some(path), Ok(entries), Ok(cooldown_until)) =
-            (cache_path(), self.entries.lock(), self.cooldown_until.lock())
-        else {
+        let (Some(path), Ok(entries), Ok(mut cooldowns), Ok(last_override)) = (
+            self.path.clone(),
+            self.entries.lock(),
+            self.cooldowns.lock(),
+            self.last_override.lock(),
+        ) else {
             return;
         };
+        // A cooldown that has run out says nothing, and one belonging to an
+        // account that no longer exists says less: neither is worth keeping.
+        let now = store::now_ms();
+        cooldowns.retain(|_, until| *until > now);
         let saved = Persisted {
             entries: entries.clone(),
-            cooldown_until: *cooldown_until,
+            cooldowns: cooldowns.clone(),
+            last_override: *last_override,
         };
         if let Ok(json) = serde_json::to_vec_pretty(&saved) {
             let _ = std::fs::write(path, json);
@@ -328,37 +375,79 @@ impl Cache {
         self.save();
     }
 
-    fn in_cooldown(&self) -> bool {
-        self.retry_at().is_some()
+    fn in_cooldown(&self, id: &str) -> bool {
+        self.retry_at(id).is_some()
     }
 
-    /// When the next request will be allowed, if a cooldown is running.
-    pub fn retry_at(&self) -> Option<u64> {
-        let until = *self.cooldown_until.lock().ok()?;
-        (until > store::now_ms()).then_some(until)
+    /// When this account may be asked again, if it is in a cooldown.
+    pub fn retry_at(&self, id: &str) -> Option<u64> {
+        let map = self.cooldowns.lock().ok()?;
+        map.get(id).copied().filter(|until| *until > store::now_ms())
     }
 
-    fn start_cooldown(&self, for_duration: Duration) {
-        if let Ok(mut until) = self.cooldown_until.lock() {
-            *until = store::now_ms() + for_duration.as_millis() as u64;
+    /// The first moment any account comes back, for a UI that has to say
+    /// something about the app as a whole. Expired entries are skipped, so a
+    /// cooldown nobody cleared cannot go on being reported.
+    pub fn soonest_retry(&self) -> Option<u64> {
+        let map = self.cooldowns.lock().ok()?;
+        let now = store::now_ms();
+        map.values().copied().filter(|until| *until > now).min()
+    }
+
+    fn start_cooldown(&self, id: &str, for_duration: Duration) {
+        if let Ok(mut map) = self.cooldowns.lock() {
+            map.insert(id.to_string(), store::now_ms() + for_duration.as_millis() as u64);
         }
         self.save();
     }
 
-    /// Drop a running cooldown, on the user's own initiative.
+    /// Drop one account's cooldown. Its token has just been renewed, so the
+    /// refusal that started it was answered with credentials that no longer
+    /// exist and says nothing about the request that follows.
+    pub fn clear_cooldown(&self, id: &str) {
+        if let Ok(mut map) = self.cooldowns.lock() {
+            map.remove(id);
+        }
+        self.save();
+    }
+
+    /// Drop every cooldown on the user's own initiative, and say whether there
+    /// was anything to drop.
     ///
-    /// The refusal it came from was answered with a token that has since been
-    /// renewed, so it says nothing about the request that follows — and a
-    /// Refresh that cannot even try is indistinguishable from a broken button.
-    pub fn clear_cooldown(&self) {
-        if let Ok(mut until) = self.cooldown_until.lock() {
-            *until = 0;
+    /// Someone looking at a card of four-hour-old numbers knows something a
+    /// blanket `Retry-After` does not: whether the reason for the refusal still
+    /// applies. Tonight it did not — the endpoint had been answering happily
+    /// for twenty minutes. Throttled all the same, so this stays a considered
+    /// gesture rather than a way to hammer the endpoint.
+    pub fn override_cooldowns(&self) -> bool {
+        let now = store::now_ms();
+        let Ok(mut last) = self.last_override.lock() else {
+            return false;
+        };
+        if now.saturating_sub(*last) < OVERRIDE_INTERVAL_MS {
+            return false;
         }
+        let Ok(mut map) = self.cooldowns.lock() else {
+            return false;
+        };
+        if !map.values().any(|until| *until > now) {
+            // Nothing was blocked, so nothing was spent: the next press still
+            // gets its turn.
+            return false;
+        }
+        map.clear();
+        *last = now;
+        drop(map);
+        drop(last);
         self.save();
+        true
     }
 
     pub fn forget(&self, id: &str) {
         if let Ok(mut map) = self.entries.lock() {
+            map.remove(id);
+        }
+        if let Ok(mut map) = self.cooldowns.lock() {
             map.remove(id);
         }
         self.save();
@@ -393,7 +482,7 @@ pub async fn for_profile(cache: &Cache, id: &str, force: bool) -> Result<Usage> 
 
     // While rate-limited, stale numbers beat no numbers and beat another
     // refused request.
-    if cache.in_cooldown() {
+    if cache.in_cooldown(id) {
         return cache
             .get_any(id)
             .ok_or_else(|| anyhow!(i18n::t("errors.rate_limited")));
@@ -448,7 +537,7 @@ pub async fn for_profile(cache: &Cache, id: &str, force: bool) -> Result<Usage> 
 /// and hands back whatever was last known, anything else is just the error.
 fn fall_back(cache: &Cache, id: &str, e: anyhow::Error) -> Result<Usage> {
     if let Some(limited) = e.downcast_ref::<RateLimited>() {
-        cache.start_cooldown(limited.cooldown());
+        cache.start_cooldown(id, limited.cooldown());
         if let Some(stale) = cache.get_any(id) {
             return Ok(stale);
         }
@@ -560,6 +649,73 @@ mod tests {
         assert_eq!(usage.five_hour.as_ref().unwrap().utilization, 3.0);
     }
 
+    /// The endpoint's blanket hour is not a deadline it keeps to, and sitting
+    /// blind for it costs more than the one request finding out costs.
+    #[test]
+    fn a_cooldown_is_capped_however_long_the_server_asks() {
+        let asked_for_an_hour = RateLimited {
+            retry_after: Some(Duration::from_secs(3600)),
+        };
+        assert_eq!(
+            asked_for_an_hour.cooldown(),
+            Duration::from_millis(MAX_COOLDOWN_MS)
+        );
+
+        // Anything shorter is taken at its word.
+        let asked_for_a_minute = RateLimited {
+            retry_after: Some(Duration::from_secs(60)),
+        };
+        assert_eq!(asked_for_a_minute.cooldown(), Duration::from_secs(60));
+    }
+
+    /// The refusal belongs to the account whose token earned it — pausing the
+    /// others blanks the very meters the user is about to switch on.
+    /// Every cache here is `default()`, which has no path and therefore never
+    /// touches the file the app keeps for the user.
+    #[test]
+    fn a_cooldown_pauses_one_account_only() {
+        let cache = Cache::default();
+        cache.start_cooldown("spent", Duration::from_secs(600));
+
+        assert!(cache.in_cooldown("spent"));
+        assert!(!cache.in_cooldown("healthy"));
+        assert!(cache.retry_at("healthy").is_none());
+        assert_eq!(cache.retry_at("spent"), cache.soonest_retry());
+    }
+
+    #[test]
+    fn a_memory_only_cache_writes_nothing() {
+        let cache = Cache::default();
+        assert!(cache.path.is_none());
+        cache.start_cooldown("spent", Duration::from_secs(600));
+        cache.save(); // Would be a write with a path; here it is a no-op.
+        assert!(cache.in_cooldown("spent"), "and the state is still in memory");
+    }
+
+    #[test]
+    fn an_override_lifts_every_cooldown_but_only_now_and_then() {
+        let cache = Cache::default();
+        cache.start_cooldown("one", Duration::from_secs(600));
+        cache.start_cooldown("two", Duration::from_secs(600));
+
+        assert!(cache.override_cooldowns(), "the first press gets through");
+        assert!(!cache.in_cooldown("one") && !cache.in_cooldown("two"));
+
+        cache.start_cooldown("one", Duration::from_secs(600));
+        assert!(!cache.override_cooldowns(), "the next one is too soon");
+        assert!(cache.in_cooldown("one"));
+    }
+
+    /// With nothing blocked there is nothing to spend the throttle on.
+    #[test]
+    fn an_override_with_no_cooldown_running_keeps_its_turn() {
+        let cache = Cache::default();
+        assert!(!cache.override_cooldowns());
+
+        cache.start_cooldown("one", Duration::from_secs(600));
+        assert!(cache.override_cooldowns(), "still its first real use");
+    }
+
     #[test]
     fn a_window_with_no_data_never_triggers_a_switch() {
         let usage = parse(r#"{"five_hour": null, "seven_day": null}"#);
@@ -572,7 +728,11 @@ pub async fn for_all(cache: &Cache, force: bool) -> Result<Vec<ProfileUsage>> {
     let ids: Vec<String> = store::list()?.into_iter().map(|p| p.id).collect();
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        let entry = match for_profile(cache, &id, force).await {
+        let result = for_profile(cache, &id, force).await;
+        // Read before the id is moved into the entry, and after the fetch: a
+        // refusal in this very round is what sets it.
+        let retry_at = cache.retry_at(&id);
+        let entry = match result {
             Ok(usage) => ProfileUsage {
                 id,
                 // Past its TTL means it was kept, not fetched: the cooldown, or
@@ -580,15 +740,13 @@ pub async fn for_all(cache: &Cache, force: bool) -> Result<Vec<ProfileUsage>> {
                 stale: store::now_ms().saturating_sub(usage.fetched_at) >= CACHE_TTL_MS,
                 usage: Some(usage),
                 error: None,
-                // Set whether or not this account failed: the cooldown is
-                // global, so this is when any of them can come back.
-                retry_at: cache.retry_at(),
+                retry_at,
             },
             Err(e) => ProfileUsage {
                 id,
                 usage: None,
                 error: Some(format!("{e:#}")),
-                retry_at: cache.retry_at(),
+                retry_at,
                 stale: false,
             },
         };

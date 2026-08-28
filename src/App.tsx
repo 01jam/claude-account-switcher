@@ -28,6 +28,7 @@ import {
   type Settings,
   type ToggleKey,
   type TokenOutcome,
+  type RefreshReport,
 } from "./api";
 import AccountList from "./components/AccountList";
 import ResizeGrip from "./components/ResizeGrip";
@@ -37,6 +38,7 @@ import { useWindowDrag } from "./useWindowDrag";
 import {
   LangProvider,
   resolveLang,
+  useLang,
   useT,
   type Lang,
   type Translate,
@@ -57,6 +59,7 @@ export default function App() {
 
 function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
   const t = useT();
+  const lang = useLang();
   const drag = useWindowDrag();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [current, setCurrent] = useState<CurrentAccount | null>(null);
@@ -184,7 +187,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
                 // Renewing first is what makes the numbers reachable at all for
                 // an account whose token has expired — and pressing this button
                 // has to visibly do something either way.
-                setNotice(tokenNotice(t, await api.refreshTokens()));
+                setNotice(refreshNotice(t, lang, await api.refreshTokens()));
                 await loadUsage(true);
               })
             }
@@ -278,7 +281,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
             onPress={() => run(() => api.saveCurrentAccount())}
           >
             <IconDeviceFloppy size={16} />
-            {t("login.refresh_token")}
+            {t("login.save_current")}
           </Button>
         )}
       </footer>
@@ -313,22 +316,36 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
   );
 }
 
-/** What a renewal pass has to say for itself. Reporting "nothing was due" is
- *  the point: a Refresh that answers with silence reads as a broken button. */
-function tokenNotice(t: Translate, outcomes: TokenOutcome[]): string {
-  const failed = outcomes.find((o) => o.status === "failed");
+/** What a press of Refresh has to say for itself. Reporting "nothing was due"
+ *  is the point: a button that answers with silence reads as a broken one. */
+function refreshNotice(
+  t: Translate,
+  lang: Lang,
+  report: RefreshReport,
+): string {
+  const failed = report.tokens.find((o) => o.status === "failed");
   if (failed) {
     return t("tokens.failed", {
       name: failed.label,
       error: failed.error ?? "",
     });
   }
-  const renewed = outcomes.filter((o) => o.status === "renewed");
+  const renewed = report.tokens.filter((o) => o.status === "renewed");
   if (renewed.length === 1) {
     return t("tokens.renewed_one", { name: renewed[0].label });
   }
   if (renewed.length > 1) {
     return t("tokens.renewed_many", { count: renewed.length });
+  }
+  // Still standing means this press did not get to override it — the previous
+  // one did, moments ago. Saying when beats leaving the numbers unexplained.
+  if (report.retryAt) {
+    return t("usage.retry_blocked", {
+      time: new Date(report.retryAt).toLocaleTimeString(lang, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
   }
   return t("tokens.all_fresh");
 }

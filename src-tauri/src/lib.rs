@@ -218,23 +218,48 @@ async fn fetch_usage(
     to_string_err(result)
 }
 
-/// Renew every token that is due, on the user's own initiative.
+/// What pressing Refresh came to, in full: the tokens, and whether the numbers
+/// can be asked for again right now.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RefreshReport {
+    tokens: Vec<oauth::Outcome>,
+    /// A rate-limit cooldown was lifted for this attempt.
+    retried: bool,
+    /// When the endpoint may be asked again, if one is still standing.
+    retry_at: Option<u64>,
+}
+
+/// Renew every token that is due and clear the way for a fresh reading, on the
+/// user's own initiative.
 ///
-/// The same pass the keeper runs on its timer — pressing Refresh should not
-/// have to mean something different from waiting for it.
+/// The renewals are the same pass the keeper runs on its timer. What is
+/// different is the cooldown: a person pressing this can see the numbers are
+/// hours old, which is more than a blanket `Retry-After` knows.
 #[tauri::command]
-async fn refresh_tokens(
-    app: AppHandle,
-    cache: State<'_, Cache>,
-) -> Result<Vec<oauth::Outcome>, String> {
-    let outcomes = oauth::renew_due(oauth::LIVE_MARGIN_MS, oauth::STORED_MARGIN_MS).await;
-    if outcomes.iter().any(|o| o.status == oauth::Status::Renewed) {
-        // Whatever refusal started a cooldown was answered with a token that no
-        // longer exists, so it says nothing about the request that follows.
-        cache.clear_cooldown();
-    }
+async fn refresh_tokens(app: AppHandle, cache: State<'_, Cache>) -> Result<RefreshReport, String> {
+    let tokens = oauth::renew_due(oauth::LIVE_MARGIN_MS, oauth::STORED_MARGIN_MS).await;
+    let blocked = cache.soonest_retry().is_some();
+
+    let retried = if tokens.iter().any(|o| o.status == oauth::Status::Renewed) {
+        // A renewed account's refusal was answered with a token that no longer
+        // exists: there is nothing left for it to say.
+        for outcome in &tokens {
+            if outcome.status == oauth::Status::Renewed {
+                cache.clear_cooldown(&outcome.id);
+            }
+        }
+        blocked
+    } else {
+        cache.override_cooldowns()
+    };
+
     notify_changed(&app);
-    Ok(outcomes)
+    Ok(RefreshReport {
+        tokens,
+        retried,
+        retry_at: cache.soonest_retry(),
+    })
 }
 
 /// Renew one account now, whatever its expiry says. The explicit gesture from
@@ -247,7 +272,7 @@ async fn refresh_profile_token(
 ) -> Result<(), String> {
     let active = to_string_err(store::active())?;
     let result = to_string_err(oauth::renew(&id, active.as_deref(), oauth::FORCE).await);
-    cache.clear_cooldown();
+    cache.clear_cooldown(&id);
     notify_changed(&app);
     result.map(|_| ())
 }

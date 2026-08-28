@@ -43,6 +43,7 @@ usage:
   resets_in_days: resets in {days}d {hours}h
   stale_minutes: "numbers from {minutes} min ago"
   stale_hours: "numbers from {hours}h ago"
+  retry_blocked: "The API asked to wait — retrying at {time}."
   retry_soon: " — retrying shortly"
   retry_at: " — retrying at {time} ({minutes} min)"
 
@@ -77,7 +78,7 @@ login:
   unsaved_title: Login not saved
   unsaved_body: "{name} is signed in but is not one of the saved accounts."
   unsaved_fallback: An account
-  refresh_token: Refresh token
+  save_current: Save current login
   add: Add account
   add_title: Add an account
   step_logout: Sign out of the current account (it stays saved, you do not lose it).

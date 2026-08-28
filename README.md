@@ -61,17 +61,36 @@ account nobody has run `claude` under lately. See below.
 
 The endpoint rate-limits, so requests are kept sparse: a response stays valid
 for 5 minutes, the periodic check runs every 5 minutes and reuses that cache.
-After a `429` the app stops asking for 10 minutes and keeps showing the last
-known numbers rather than emptying the meters.
+After a `429` that account is left alone for a while and keeps showing its last
+known numbers rather than emptying its meters.
 
-The cache lives on disk (`usage.json`, next to the profiles), cooldown included.
-Held only in memory, every restart began blind and re-asked for everything —
-the surest way to earn a `429` and then spend ten minutes with no numbers to
-decide on, auto-switch stalled.
+**That account, not all of them.** The endpoint answers for the token it was
+handed, so a refusal is about the account behind it — typically one sitting at
+its own limit, which is exactly the account the user is about to switch away
+from. Pausing the others blanks the meters they would be switching *to*.
+
+The cooldown is also capped at 15 minutes however long `Retry-After` asks for.
+The endpoint answers refusals with a stock `retry-after: 3600` and is then
+perfectly willing twenty minutes later; and past 15 minutes the numbers are too
+old for the auto-switch to act on anyway, so that is as long as it is worth
+sitting blind before spending one request to find out. Which is the answer to
+"how does it get out of a loop where every first request fails": it never waits
+more than a quarter of an hour before testing reality again, and a refusal costs
+one request per account.
+
+The cache lives on disk (`usage.json`, next to the profiles), cooldowns
+included. Held only in memory, every restart began blind and re-asked for
+everything — the surest way to earn a `429` and then spend the cooldown with no
+numbers to decide on, auto-switch stalled.
 
 The first check runs 15 seconds after launch, not after five minutes; and
 pressing **Refresh** renews whatever tokens are due and then re-reads the
-numbers, since one is what buys the other.
+numbers, since one is what buys the other. It also lifts a running cooldown —
+at most once every 3 minutes, so a held button cannot become a stream of refused
+requests. Someone looking at four-hour-old numbers knows something a blanket
+`Retry-After` does not: whether the reason for the refusal still applies. When
+the press is too soon, the notice says when the next attempt is due rather than
+leaving the unchanged numbers to speak for themselves.
 
 While a cooldown runs, cards carry the age of what they are showing ("numbers
 from 3h ago") and when the app will ask again. Kept numbers that look freshly
@@ -117,7 +136,14 @@ take the same lock.
 
 If a session is holding it right now, the renewal is not forced: it is deferred
 and retried on the next pass, seconds later. And **Renew token** in an account's
-own menu does it immediately, whatever the expiry says.
+own menu does it immediately, whatever the expiry says, clearing that account's
+cooldown with it.
+
+**Save current login**, at the bottom of the window, is a different thing and no
+longer pretends otherwise: it copies whatever Claude Code is signed into right
+now over the active account's saved copy, name and plan included. Switching,
+renewing and Refresh all do that on their own — this is the button for when you
+signed in outside the app and want the copy brought up to date this second.
 
 A refresh token that has been revoked or already spent cannot be renewed by
 anyone — the app says so once, and that account needs a fresh `claude` login.

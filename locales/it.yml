@@ -51,6 +51,7 @@ usage:
   resets_in_days: si azzera tra {days}g {hours}h
   stale_minutes: "dati di {minutes} min fa"
   stale_hours: "dati di {hours}h fa"
+  retry_blocked: "L'API ha chiesto di attendere — nuovo tentativo alle {time}."
   retry_soon: " — nuovo tentativo a breve"
   retry_at: " — riprovo alle {time} ({minutes} min)"
 
@@ -85,7 +86,7 @@ login:
   unsaved_title: Login non salvato
   unsaved_body: "{name} è connesso ma non è tra quelli salvati."
   unsaved_fallback: Un account
-  refresh_token: Aggiorna token
+  save_current: Salva login corrente
   add: Aggiungi account
   add_title: Aggiungi un account
   step_logout: Disconnetti l'account corrente (resta salvato, non lo perdi).

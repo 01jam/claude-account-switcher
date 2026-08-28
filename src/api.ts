@@ -47,6 +47,16 @@ export type ProfileUsage = {
   stale: boolean;
 };
 
+/** What pressing Refresh came to: the renewals, and whether the numbers can be
+ *  asked for again right now. */
+export type RefreshReport = {
+  tokens: TokenOutcome[];
+  /** A rate-limit cooldown was lifted for this attempt. */
+  retried: boolean;
+  /** When the endpoint may be asked again, if one is still standing. */
+  retryAt: number | null;
+};
+
 /** What one account's token renewal came to. */
 export type TokenOutcome = {
   id: string;
@@ -91,8 +101,8 @@ export const api = {
 
   fetchUsage: (force = false) =>
     invoke<ProfileUsage[]>("fetch_usage", { force }),
-  /** Renew every token that is due — the same pass the app runs on its timer. */
-  refreshTokens: () => invoke<TokenOutcome[]>("refresh_tokens"),
+  /** Renew every token that is due and clear the way for a fresh reading. */
+  refreshTokens: () => invoke<RefreshReport>("refresh_tokens"),
   /** Renew one account now, whatever its expiry says. */
   refreshProfileToken: (id: string) =>
     invoke<void>("refresh_profile_token", { id }),

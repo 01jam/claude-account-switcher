@@ -6,94 +6,92 @@
 > Claude Code, and reviewed mostly by using it. It works, though — so, honestly:
 > who cares.
 
-App desktop (Tauri 2 + React + React Aria Components) per tenere salvati più
-account Claude Code su Linux e macOS e cambiare quello attivo dalla finestra o
-dall'icona nella barra di sistema.
+A desktop app (Tauri 2 + React + React Aria Components) that keeps several
+Claude Code accounts saved on Linux and macOS and switches the active one from
+its window or from the system tray.
 
-L'interfaccia è in italiano e in inglese: segue la lingua di sistema, con un
-override nelle impostazioni.
+The interface speaks English and Italian: it follows the system language, with
+an override in settings.
 
-## Come funziona
+## How it works
 
-Claude Code tiene il login in due pezzi:
+Claude Code keeps its login in two pieces:
 
-- i **token OAuth** — su Linux in `~/.claude/.credentials.json`, su macOS nel
-  portachiavi di accesso, sotto il servizio `Claude Code-credentials`
-- `~/.claude.json` — configurazione, di cui solo alcune chiavi
-  (`oauthAccount`, `userID`, …) identificano l'account
+- the **OAuth tokens** — on Linux in `~/.claude/.credentials.json`, on macOS in
+  the login keychain, under the service `Claude Code-credentials`
+- `~/.claude.json` — configuration, of which only a few keys (`oauthAccount`,
+  `userID`, …) identify the account
 
-L'app copia entrambi in `~/.config/claude-switch/profiles/<id>/` (su macOS
-`~/Library/Application Support/claude-switch/`) e li ripristina quando cambi
-account. Il resto di `~/.claude.json` (progetti, cronologia, preferenze) non
-viene toccato: la scrittura è atomica e ogni switch lascia uno snapshot in
-`backups/`.
+The app copies both into `~/.config/claude-switch/profiles/<id>/` (on macOS
+`~/Library/Application Support/claude-switch/`) and restores them when you
+switch. The rest of `~/.claude.json` — projects, history, preferences — is left
+alone: writes are atomic, and every switch leaves a snapshot in `backups/`.
 
-Su macOS l'app scrive dove trova il login: se il portachiavi ha già una voce
-usa quella, altrimenti ricade sul file — così la CLI legge sempre l'account
-giusto, qualunque delle due strade usi la versione installata.
+On macOS the app writes wherever it finds the login: if the keychain already
+holds an entry it uses that, otherwise it falls back to the file. Either way the
+CLI reads the right account, whichever of the two routes your installed version
+takes.
 
-Prima di ogni switch le credenziali vive vengono ricopiate nel profilo attivo,
-perché Claude Code ruota i token mentre lavora.
+Before every switch the live credentials are copied back into the active
+profile, because Claude Code rotates the tokens as it runs.
 
-### Consumi e switch automatico
+### Usage and auto-switch
 
-Ogni account mostra due barre: **sessione 5 ore** e **settimana**. I numeri
-vengono da `GET https://api.anthropic.com/api/oauth/usage`, lo stesso endpoint
-che Claude Code interroga per il suo `/usage`, chiamato con il token OAuth
-dell'account. **Non è un'API pubblica**: la sua forma può cambiare senza
-preavviso, quindi ogni campo è trattato come opzionale — se manca, la barra
-mostra `—` e l'auto-switch non scatta.
+Every account shows two meters: **5-hour session** and **week**. The numbers
+come from `GET https://api.anthropic.com/api/oauth/usage`, the same endpoint
+Claude Code queries for its own `/usage`, called with that account's OAuth
+token. **This is not a public API**: its shape may change without notice, so
+every field is treated as optional — when one is missing the meter shows `—` and
+the auto-switch does not fire.
 
-Su ogni barra c'è un cursore trascinabile: è la **soglia** oltre la quale
-l'account va considerato esaurito (default 100%, cioè solo a limite pieno).
-Con lo switch automatico attivo, l'app controlla l'account attivo ogni 3
-minuti e, appena **uno dei due** contatori tocca la propria soglia, passa
-all'account successivo **nell'ordine della lista** — che riordini trascinando
-le righe dalla maniglia a sinistra.
+Each meter carries a draggable marker: the **threshold** past which the account
+counts as spent (100% by default, so only at a full limit). With auto-switch on,
+the app checks the active account every 5 minutes and, as soon as **either**
+counter reaches its own threshold, moves to the next account **in list order** —
+which you rearrange by dragging rows from the handle on the left.
 
-Un candidato già oltre le proprie soglie viene saltato; se nessuno è
-disponibile, l'app lo segnala e resta dov'è. Un account di cui non riesce a
-leggere i consumi (tipicamente token scaduto) viene invece considerato
-utilizzabile: meglio tentare lo switch che restare bloccati su un errore di
-rete.
+A candidate already past its own thresholds is skipped; if none is available the
+app says so and stays put. An account whose usage cannot be read (typically an
+expired token) is treated as usable instead: better to attempt the switch than
+to stall on a network error.
 
-I consumi degli account **non** attivi si leggono con il token salvato: se è
-scaduto quelle due barre restano vuote finché non riattivi l'account. Solo
-Claude Code rinnova i token, e l'app non lo fa al posto suo.
+Usage for accounts that are **not** active is read with the stored token: if it
+has expired, those two meters stay empty until you make the account active
+again. Only Claude Code renews tokens, and this app does not do it for it.
 
-L'endpoint applica un rate limit, quindi le richieste sono tenute rade: una
-risposta resta valida 5 minuti, il controllo periodico gira ogni 5 minuti e
-riusa quella cache. Dopo un `429` l'app smette di chiedere per 10 minuti e
-continua a mostrare gli ultimi numeri noti anziché svuotare le barre.
+The endpoint rate-limits, so requests are kept sparse: a response stays valid
+for 5 minutes, the periodic check runs every 5 minutes and reuses that cache.
+After a `429` the app stops asking for 10 minutes and keeps showing the last
+known numbers rather than emptying the meters.
 
-La cache sta su disco (`usage.json` accanto ai profili), cooldown compreso.
-Tenendola solo in memoria ogni riavvio ripartiva alla cieca e richiedeva tutto
-da capo — il modo più sicuro di prendersi un `429` e restare poi dieci minuti
-senza numeri su cui decidere, con l'auto-switch fermo.
+The cache lives on disk (`usage.json`, next to the profiles), cooldown included.
+Held only in memory, every restart began blind and re-asked for everything —
+the surest way to earn a `429` and then spend ten minutes with no numbers to
+decide on, auto-switch stalled.
 
-Il primo controllo parte 15 secondi dopo l'avvio, non dopo cinque minuti; e
-anche premere **Aggiorna** lo fa scattare, perché sono gli stessi numeri.
+The first check runs 15 seconds after launch, not after five minutes; and
+pressing **Refresh** triggers it too, since they are the same numbers.
 
-Nel menu della tray ogni account riporta le due percentuali. Quando un
-contatore arriva a 5 punti dalla propria soglia compare un `⚠` accanto al nome
-e l'icona nel pannello prende un badge di avviso.
+In the tray menu each account carries both percentages. When a counter comes
+within 5 points of its threshold a `⚠` appears next to the name and the panel
+icon takes a warning badge.
 
-### Claude Desktop non è coinvolto
+### Claude Desktop is not involved
 
-Lo switch vale per la CLI e per l'estensione VSCode, che condividono i file qui
-sopra. **Claude Desktop no**: è un'app Electron che si autentica come un
-browser, con il cookie `sessionKey` di `.claude.ai` dentro il profilo Chromium
-in `~/.config/Claude/`. Nessun file in comune, quindi resta sull'account con
-cui l'hai loggato — è una scelta, non un bug.
+The switch covers the CLI and the VSCode extension, which share the files above.
+**Claude Desktop does not**: it is an Electron app that authenticates like a
+browser, with the `.claude.ai` `sessionKey` cookie inside the Chromium profile
+in `~/.config/Claude/`. No files in common, so it stays on whichever account you
+signed it into — a choice, not a bug.
 
-Volendo si potrebbe estendere lo switch anche a lui (basterebbero i ~200 KB di
-`Cookies`, `Local Storage`, `Session Storage`, `IndexedDB`, `Preferences`: il
-resto dei 289 MB è cache), ma richiederebbe il Desktop chiuso a ogni cambio ed
-è sensibile ai suoi aggiornamenti.
+It could be extended to cover it (the ~200 KB of `Cookies`, `Local Storage`,
+`Session Storage`, `IndexedDB` and `Preferences` would be enough; the rest of
+those 289 MB is cache), but it would need Desktop closed at every switch and it
+is sensitive to its updates.
 
-## Prerequisiti
+## Requirements
 
-Node 20+ e npm su entrambe le piattaforme.
+Node 20+ and npm on both platforms.
 
 ### Linux
 
@@ -101,26 +99,26 @@ Node 20+ e npm su entrambe le piattaforme.
 # toolchain
 sudo apt install -y build-essential curl file libssl-dev pkg-config
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-# runtime Tauri 2 + tray su Ubuntu 24.04+
+# Tauri 2 runtime + tray, Ubuntu 24.04+
 sudo apt install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
   libayatana-appindicator3-dev
 ```
 
-**GNOME**: la barra in alto non mostra le tray icon senza l'estensione
-[AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/).
-Senza quella, l'app funziona ma vedi solo la finestra.
+**GNOME**: the top bar shows no tray icons at all without the
+[AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/)
+extension. Without it the app still works — you just only get the window.
 
-**Scaling frazionario**: GTK 3 non lo sa fare su Wayland. Con
-`scale-monitor-framebuffer` attivo il compositor e il toolkit non concordano su
-quanto è grande la finestra: i click finiscono accanto ai pulsanti invece che
-sopra, e trascinandola su un monitor con scala diversa WebKitGTK ridipinge in un
-buffer della taglia vecchia — la finestra torna mezza disegnata. Su una sessione
-così l'app passa da sé a XWayland, che scala lui. Per tenere il backend nativo:
-`CLAUDE_SWITCH_KEEP_WAYLAND=1`.
+**Fractional scaling**: GTK 3 cannot do it on Wayland. With
+`scale-monitor-framebuffer` on, the compositor and the toolkit disagree about
+how big the window is: clicks land beside the buttons rather than on them, and
+dragging the window onto a monitor with a different scale leaves WebKitGTK
+repainting into a buffer of the old size — the window comes back half drawn. On
+a session like that the app moves itself to XWayland, which does the scaling
+instead. To keep the native backend: `CLAUDE_SWITCH_KEEP_WAYLAND=1`.
 
-**NVIDIA**: il renderer DMA-BUF di WebKitGTK e il driver proprietario non vanno
-d'accordo. Dove il modulo `nvidia` è caricato l'app imposta da sé
-`WEBKIT_DISABLE_DMABUF_RENDERER=1`, a meno che tu non l'abbia già impostata.
+**NVIDIA**: WebKitGTK's DMA-BUF renderer and the proprietary driver do not get
+along. Where the `nvidia` module is loaded the app sets
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` itself, unless you have already set it.
 
 ### macOS
 
@@ -129,72 +127,79 @@ xcode-select --install
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Niente altro: WebKit e la barra dei menu sono di sistema. L'icona nella barra
-usa il glifo come *template*, quindi segue tema chiaro e scuro.
+Nothing else: WebKit and the menu bar are the system's. The menu-bar icon uses
+the glyph as a *template*, so it follows light and dark mode.
 
-## Sviluppo
+## Development
 
 ```bash
 npm install
 npm run app        # tauri dev
-npm run app:build  # .deb / AppImage / .rpm su Linux, .app / .dmg su macOS,
-                   # in src-tauri/target/release/bundle
+npm run app:build  # .deb / AppImage / .rpm on Linux, .app / .dmg on macOS,
+                   # under src-tauri/target/release/bundle
 ```
 
-Due script accessori:
+Two side scripts:
 
 ```bash
-python3 scripts/generate-icons.py     # rigenera le icone di tray e app
-./scripts/install-desktop-entry.sh    # icona nel dock durante lo sviluppo
+python3 scripts/generate-icons.py     # regenerate the tray and app icons
+./scripts/install-desktop-entry.sh    # a real dock icon while developing
 ```
 
-`generate-icons.py` disegna tutto senza librerie grafiche. Il glifo delle frecce
-è `arrows-exchange` di Tabler, ridisegnato dai suoi path: nella tray in
-terracotta su fondo trasparente, nell'icona dell'app in bianco e inclinato di
-15° al centro di una squircle terracotta. Non c'è niente di preso da altri
-marchi, quindi lo script gira su qualsiasi macchina.
+`generate-icons.py` draws everything with no imaging library involved. The
+arrows glyph is Tabler's `arrows-exchange`, redrawn from its paths: terracotta
+on transparent for the tray, white and tilted 15° at the centre of a terracotta
+squircle for the app icon. Nothing is borrowed from anyone else's mark, so the
+script runs on any machine.
 
-`install-desktop-entry.sh` è solo per Linux e solo in sviluppo: `tauri dev`
-lancia un binario nudo e GNOME, senza un `.desktop` corrispondente, mostra
-un'icona generica. Il pacchetto costruito con `app:build` porta il proprio e non
-ne ha bisogno.
+`install-desktop-entry.sh` is Linux-only and development-only: `tauri dev`
+launches a bare binary and GNOME, with no matching `.desktop`, shows a generic
+icon. The package built by `app:build` ships its own and does not need it.
 
-Se `npm run app` fallisce con *OS file watch limit reached*, i watch inotify del
-sistema sono esauriti (Dropbox e simili ne consumano decine di migliaia):
+If `npm run app` fails with *OS file watch limit reached*, the system's inotify
+watches are exhausted (Dropbox and friends eat tens of thousands):
 
 ```bash
 echo 'fs.inotify.max_user_watches=524288' | sudo tee /etc/sysctl.d/60-inotify.conf
 sudo sysctl --system
 ```
 
-## Uso
+## Using it
 
-1. Sei già loggato con un account: apri l'app e premi **Salva** nel banner
-   "Login non salvato".
-2. **Aggiungi account** → disconnetti, apri un terminale, fai `/login` con il
-   secondo account, torna e premi **Salva account**.
-3. Da qui in poi: clic su un account nella lista, o dal menu dell'icona di
-   sistema.
+1. You are already signed in with one account: open the app and press **Save**
+   in the "Login not saved" banner.
+2. **Add account** → sign out, open a terminal, log in with the second account,
+   come back and press **Save account**.
+3. From then on: click an account in the list, or pick one from the tray menu.
 
-La finestra non ha decorazioni di sistema: la barra in alto è disegnata
-dall'app — si trascina da lì, e a destra ci sono impostazioni, riduci a icona e
-chiudi. Non c'è un pulsante per ingrandire: una lista di due o tre account non
-ci fa niente con uno schermo intero.
+The window carries no system decorations: the bar at the top is drawn by the app
+— you drag it from there, and on the right sit settings, minimise and close.
+There is no maximise button: a list of two or three accounts has nothing to do
+with a full screen.
 
-Chiudendo la finestra l'app resta attiva nella barra; si esce dal menu
-dell'icona. Su macOS un clic sull'icona nel Dock riapre la finestra.
+Closing the window leaves the app running in the tray; you quit it from the tray
+menu. On macOS, clicking the Dock icon brings the window back.
 
-La lingua si cambia in **Impostazioni → Lingua** (automatica, italiano,
-inglese) e si applica subito, finestra e menu compresi. Le stringhe stanno in
-`locales/*.yml`, condivise fra frontend e backend: per aggiungere una lingua si
-copia uno dei due file e si registra il tag in `src/i18n.ts` e
+The language is changed under **Settings → Language** (automatic, Italian,
+English) and applies straight away, window and menus included. The strings live
+in `locales/*.yml`, shared between frontend and backend: to add a language, copy
+one of the two files and register the tag in `src/i18n.ts` and
 `src-tauri/src/i18n.rs`.
 
-## Avvertenze
+## Caveats
 
-- Cambia account con Claude Code **chiuso**: una sessione in corso può
-  riscrivere `~/.claude.json` e sovrascrivere lo switch.
-- Su Linux i token sono salvati in chiaro (come fa Claude Code stesso) con
-  permessi `0600`: non è un keyring. Su macOS i token vivi stanno nel
-  portachiavi, ma le copie nei profili dell'app restano file `0600` — quindi
-  la stessa avvertenza vale anche lì.
+- Switch accounts with Claude Code **closed**: a running session can rewrite
+  `~/.claude.json` and overwrite the switch.
+- On Linux the tokens are stored in the clear (as Claude Code itself does) with
+  `0600` permissions: this is not a keyring. On macOS the live tokens sit in the
+  keychain, but the copies in the app's profiles are still `0600` files — so the
+  same caveat applies there too.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
+Claude Account Switcher is an independent tool. It is not affiliated with,
+endorsed by, or supported by Anthropic; Claude and Claude Code are theirs. It
+reads an undocumented usage endpoint that may change or stop working without
+notice.

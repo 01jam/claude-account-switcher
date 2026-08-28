@@ -18,6 +18,7 @@
         "minWidth": 420,
         "minHeight": 480,
         "maxWidth": 768,
+        "maxHeight": 1400,
         "resizable": true,
         "fullscreen": false,
         "visible": false,

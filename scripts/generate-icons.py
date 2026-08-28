@@ -11,8 +11,10 @@ Two families:
 
 * **App** (`32x32`, `128x128`, `128x128@2x`, `icon`, and `icon.icns` for the
   macOS bundle) — a terracotta squircle with the same arrows glyph centred on
-  it in white, tilted 15°. Nothing is borrowed from anyone else's mark, so
-  these regenerate on any machine and carry no redistribution caveat.
+  it in white, tilted 15°, on the macOS icon grid: the plate covers 80% of the
+  canvas and the rest is clear, so the app sits at the size of everything
+  around it. Nothing is borrowed from anyone else's mark, so these regenerate
+  on any machine and carry no redistribution caveat.
 
 Run: python3 scripts/generate-icons.py
 """
@@ -158,33 +160,48 @@ def render_tray(alert):
 # --- app icon -------------------------------------------------------------
 
 GLYPH_ANGLE = math.radians(-15)  # screen coords: negative reads anticlockwise
-GLYPH_SPAN = 0.60  # share of the icon side the glyph spans before rotating
-PLATE_MARGIN = 0.03
+# Share of the *plate* the tilted glyph spans, measured on its rotated bounding
+# box. Claude Desktop's own mark keeps 62% of its plate, so ours sits at the
+# same weight beside it in a dock.
+GLYPH_SPAN = 0.62
+# macOS draws app icons on a 1024 canvas with the body 824 across: 100px of
+# clear space a side. Claude Desktop's icon measures 204 of 256 (79.7%) — the
+# same grid — so one number answers both references, and the icon no longer
+# looks a size larger than everything next to it.
+PLATE_MARGIN = 100 / 1024
 PLATE_N = 4.5  # superellipse exponent: squircle, not a rounded rectangle
 
 
 def render_app(size):
-    scale = (size * GLYPH_SPAN) / (GX1 - GX0)
-    stroke_r = STROKE_R * scale
-
-    # Rotate around the glyph's own centre, then centre the *rotated* bounding
-    # box on the plate. Centring the unrotated box instead would leave the mark
-    # visibly low and to one side, because the tilt is what sets its extents.
-    cx, cy = (GX0 + GX1) / 2, (GY0 + GY1) / 2
+    plate_side = size * (1 - 2 * PLATE_MARGIN)
     cos_a, sin_a = math.cos(GLYPH_ANGLE), math.sin(GLYPH_ANGLE)
+    cx, cy = (GX0 + GX1) / 2, (GY0 + GY1) / 2
 
     def place(p):
-        x, y = (p[0] - cx) * scale, (p[1] - cy) * scale
+        x, y = p[0] - cx, p[1] - cy
         return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
 
-    rotated = [(place(a), place(b)) for a, b in SEGMENTS]
-    xs = [p[0] for seg in rotated for p in seg]
-    ys = [p[1] for seg in rotated for p in seg]
-    dx = size / 2 - (min(xs) + max(xs)) / 2
-    dy = size / 2 - (min(ys) + max(ys)) / 2
-    segs = [((a[0] + dx, a[1] + dy), (b[0] + dx, b[1] + dy)) for a, b in rotated]
+    # Both the size and the centring come from the extent the mark actually has
+    # once tilted, so they are taken off the rotated geometry rather than the
+    # upright bounding box. The arrows run corner to corner, so the tilt pulls
+    # their horizontal extent in rather than pushing it out: going by the
+    # upright box would draw the glyph a sixth small and leave it visibly low
+    # and to one side of the plate.
+    unit = [(place(a), place(b)) for a, b in SEGMENTS]
+    xs = [p[0] for seg in unit for p in seg]
+    ys = [p[1] for seg in unit for p in seg]
+    span = max(max(xs) - min(xs), max(ys) - min(ys)) + 2 * STROKE_R
+    scale = (plate_side * GLYPH_SPAN) / span
+    stroke_r = STROKE_R * scale
 
-    half = size * (1 - 2 * PLATE_MARGIN) / 2
+    dx = size / 2 - (min(xs) + max(xs)) / 2 * scale
+    dy = size / 2 - (min(ys) + max(ys)) / 2 * scale
+    segs = [
+        ((a[0] * scale + dx, a[1] * scale + dy), (b[0] * scale + dx, b[1] * scale + dy))
+        for a, b in unit
+    ]
+
+    half = plate_side / 2
     pc = size / 2
 
     def on_plate(p):

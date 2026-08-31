@@ -30,6 +30,10 @@ tokio = { version = "1", features = ["time", "sync"] }
 # Writes the XDG autostart entry (and the equivalent elsewhere) rather than us
 # hand-rolling the desktop file.
 tauri-plugin-autostart = "2"
+# One app, however many times its icon is clicked. Hand-rolling this means a
+# lock file, deciding what a stale one means after a crash, and a channel back
+# to the running process — all of which this already does per platform.
+tauri-plugin-single-instance = "2"
 # System language, for the automatic UI-language choice. Reads the platform API
 # rather than $LANG, which GUI sessions on macOS do not set.
 sys-locale = "0.3"

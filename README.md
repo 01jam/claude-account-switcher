@@ -285,6 +285,14 @@ with a full screen.
 Closing the window leaves the app running in the tray; you quit it from the tray
 menu. On macOS, clicking the Dock icon brings the window back.
 
+Launching it again while it is already running does not start a second copy: the
+new process hands over to the one already there, which brings its window back,
+and then exits. That is what makes clicking the launcher a way to reopen the
+window rather than a way to end up with two tray icons. On GNOME under Wayland
+the compositor has the last word on whether a window may raise itself: a window
+hidden in the tray comes back, but one that is merely behind another may only
+flash in the dock rather than jump to the front.
+
 The language is changed under **Settings → Language** (automatic, Italian,
 English) and applies straight away, window and menus included. The strings live
 in `locales/*.yml`, shared between frontend and backend: to add a language, copy

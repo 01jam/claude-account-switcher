@@ -535,6 +535,17 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        // First, before anything else has a chance to run: a second launch has
+        // no business building a tray icon or loading a cache it is about to
+        // throw away. What it does instead is what clicking a running app's
+        // icon should do — bring the window back — and then exit.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // Onto the main thread, as everything that touches the window does
+            // here: this callback arrives on whichever thread the plugin
+            // listens on, and GTK has opinions about that.
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || tray::show_window(&handle));
+        }))
         .plugin(tauri_plugin_autostart::init(
             // Launch through the login session's own mechanism, with no extra
             // arguments: the start-hidden setting decides what the app does.

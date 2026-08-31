@@ -135,3 +135,27 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           gh release upload "$TAG" SHA256SUMS --clobber
+
+  # Same wiring mdgen uses to announce its releases. It hangs off checksums so
+  # the message never points at a release whose packages are still uploading,
+  # and the step is skipped when DISCORD_WEBHOOK is unset, which keeps forks
+  # and secret-less re-runs green.
+  notify:
+    needs: checksums
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+    steps:
+      - name: Notify Discord
+        if: env.DISCORD_WEBHOOK != ''
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ env.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          title: "🚀 Nuova Release Disponibile: ${{ env.TAG }}!"
+          description: |
+            **Claude Account Switcher** `${{ env.TAG }}` è stato pubblicato.
+            Pacchetti per Linux (`.deb`, `.rpm`, `.AppImage`) e macOS (`.dmg` universale).
+
+            [Visualizza su GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.TAG }})
+          color: 0x28a745

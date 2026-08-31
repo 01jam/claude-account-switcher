@@ -886,17 +886,31 @@ code {
 }
 
 .modal {
+  display: flex;
   width: 100%;
   max-width: 380px;
+  /* Bounded by the window. Without this a dialog taller than the window
+     overflows a centred flex line in both directions at once, and the half
+     above the top edge is somewhere no scrollbar can reach — which is how the
+     update row lost its own heading. */
+  max-height: 100%;
 }
 
 .dialog {
+  width: 100%;
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow);
   outline: none;
+  /* The whole dialog scrolls, heading and Close button included, rather than a
+     pane inside it. In a window this small, pinning them would spend on chrome
+     the room the content is short of. The scrollbar sits inside the dialog's
+     own border, where a drag on it cannot be read as a click on the backdrop
+     and dismiss the thing being read. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .dialog h2 {

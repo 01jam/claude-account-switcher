@@ -107,6 +107,18 @@ settings:
   language_hint: Applies straight away, no restart needed.
   language_auto: Automatic ({name})
 
+update:
+  badge: A new version is available
+  title: Update
+  available: "Version {version} is available. You are on {current}."
+  notes: Release notes
+  install: Download and install
+  install_hint: Downloads the package and opens it with the system installer, which asks for your password. Nothing is installed behind your back.
+  open_page: Open the release page
+  open_page_hint: This release carries no package in the format this copy was installed from, so the download is a manual one.
+  working: Downloading…
+  done: "{name} downloaded — the system installer takes it from here."
+
 errors:
   no_login: no login found — run `claude` and sign in before saving
   no_terminal: no terminal emulator found — open one yourself and run `claude`
@@ -119,3 +131,5 @@ errors:
   login_busy: Claude Code is writing its login right now
   invalid_token: invalid or expired token
   api_status: the API answered {status}
+  no_update: no newer version to install
+  no_opener: "cannot hand the file to the desktop: {error}"

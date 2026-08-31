@@ -115,6 +115,18 @@ settings:
   language_hint: Cambia subito, senza riavviare l'app.
   language_auto: Automatica ({name})
 
+update:
+  badge: È disponibile una nuova versione
+  title: Aggiornamento
+  available: "È disponibile la versione {version}. Stai usando la {current}."
+  notes: Note di rilascio
+  install: Scarica e installa
+  install_hint: Scarica il pacchetto e lo apre con l'installer di sistema, che chiederà la tua password. Niente viene installato di nascosto.
+  open_page: Apri la pagina della release
+  open_page_hint: Questa release non ha un pacchetto nel formato da cui è stata installata questa copia, quindi il download va fatto a mano.
+  working: Scaricamento…
+  done: "{name} scaricato — da qui in poi tocca all'installer di sistema."
+
 errors:
   no_login: nessun login trovato — esegui `claude` e accedi prima di salvare
   no_terminal: nessun emulatore di terminale trovato — aprine uno ed esegui `claude`
@@ -127,3 +139,5 @@ errors:
   login_busy: Claude Code sta scrivendo il suo login proprio adesso
   invalid_token: token non valido o scaduto
   api_status: l'API ha risposto {status}
+  no_update: nessuna versione più recente da installare
+  no_opener: "non riesco a passare il file al desktop: {error}"

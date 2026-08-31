@@ -29,6 +29,8 @@ import {
   type ToggleKey,
   type TokenOutcome,
   type RefreshReport,
+  type UpdateAvailable,
+  type UpdateStatus,
 } from "./api";
 import AccountList from "./components/AccountList";
 import ResizeGrip from "./components/ResizeGrip";
@@ -66,6 +68,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
   const [usage, setUsage] = useState<Record<string, ProfileUsage>>({});
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,6 +103,19 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
   useEffect(() => {
     reload();
     loadUsage();
+    // The check runs on the Rust side from launch, so by the time a window
+    // opens the answer is usually already sitting there. Merged rather than
+    // assigned: the first check fires at launch too, and an event that beat
+    // this round-trip home must not be overwritten by the empty answer it
+    // raced.
+    api
+      .updateStatus()
+      .then((status) =>
+        setUpdate((prev) =>
+          prev?.available ? { ...status, available: prev.available } : status,
+        ),
+      )
+      .catch(() => {});
     const unlistenChanged = listen("profiles-changed", reload);
     const unlistenSwitched = listen<AutoSwitched>("auto-switched", (e) => {
       setNotice(t("autoswitch.switched", e.payload));
@@ -116,6 +132,13 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
           error: e.payload.error ?? "",
         }),
       );
+    });
+
+    const unlistenUpdate = listen<UpdateAvailable>("update-available", (e) => {
+      setUpdate((prev) => ({
+        current: prev?.current ?? "",
+        available: e.payload,
+      }));
     });
 
     // The meters are pushed, not pulled. A timer here would be the webview's,
@@ -144,6 +167,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       unlistenExhausted.then((f) => f());
       unlistenToken.then((f) => f());
       unlistenUsage.then((f) => f());
+      unlistenUpdate.then((f) => f());
       window.removeEventListener("focus", onWake);
       document.removeEventListener("visibilitychange", onWake);
     };
@@ -172,8 +196,12 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
           it is chrome, not one of the list's own actions. */}
       <div className="titlebar" {...drag}>
         <Button
-          className="win-control"
-          aria-label={t("app.settings")}
+          className={`win-control${update?.available ? " win-control-dot" : ""}`}
+          aria-label={
+            update?.available
+              ? `${t("app.settings")} — ${t("update.badge")}`
+              : t("app.settings")
+          }
           onPress={() => setShowSettings(true)}
         >
           <IconSettings size={16} />
@@ -314,6 +342,13 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
                 : api.setStartHidden;
           run(() => call(value));
         }}
+        update={update}
+        onInstallUpdate={() =>
+          run(async () => {
+            const name = await api.installUpdate();
+            setNotice(t("update.done", { name }));
+          })
+        }
         onLanguageChange={(tag) => {
           // Same reasoning as the toggles, and here the whole window repaints
           // in the new language the moment the reload comes back.

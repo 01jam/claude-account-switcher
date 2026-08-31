@@ -88,6 +88,7 @@ code {
 }
 
 .win-control {
+  position: relative;
   display: grid;
   place-items: center;
   width: 42px;
@@ -106,6 +107,21 @@ code {
 .win-control[data-focus-visible] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* The only thing in this bar that is news rather than chrome. The ring in the
+   window's own colour keeps it reading as a mark on the gear rather than as
+   part of the icon. */
+.win-control-dot::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  background: var(--danger);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg);
 }
 
 /* Fixed to the window rather than sitting in the footer: it belongs to the
@@ -671,6 +687,22 @@ code {
 .setting[data-disabled] {
   opacity: 0.55;
   cursor: default;
+}
+
+/* Tinted with the accent rather than the danger colour: a new version is an
+   offer, not a problem. The row is not a control, so it does not pretend to be
+   hoverable the way the switches above it are. */
+.setting-update {
+  flex-direction: column;
+  gap: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  cursor: default;
+}
+
+.setting-update-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .switch-indicator {

@@ -158,6 +158,29 @@ signed in outside the app and want the copy brought up to date this second.
 A refresh token that has been revoked or already spent cannot be renewed by
 anyone — the app says so once, and that account needs a fresh `claude` login.
 
+### Finding a new version
+
+Every six hours, and once at launch, the app asks GitHub for the newest release
+of this repository — one unauthenticated request, no token and nothing sent but
+a user agent. When the tag is a version above the running one, a red dot appears
+on the gear in the title bar and the update turns up at the top of Settings,
+with what is out, what is running, and a link to the release notes.
+
+Tags are compared as three numbers. Anything else — a `-beta.1`, a `nightly` —
+never counts as newer, because guessing where it sorts is how an app talks
+someone into a downgrade.
+
+**Installing is not automatic, and cannot honestly be.** Every format this
+project ships needs either root or a gesture from the user: a `.deb` or `.rpm`
+goes through the system's installer, a `.dmg` gets dragged. So the button
+downloads the package into your Downloads folder and opens it with whatever the
+desktop uses for that file — the installer's password prompt is the installer's,
+not this app's, and nothing is written outside the download until you answer it.
+The format is picked from how this copy was installed: an AppImage says so
+through its own environment, otherwise the choice is `.deb` or `.rpm` by
+distribution. A release with no package in that format still gets announced, and
+the button opens the release page instead of guessing.
+
 ### Claude Desktop is not involved
 
 The switch covers the CLI and the VSCode extension, which share the files above.

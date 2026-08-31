@@ -65,6 +65,23 @@ export type TokenOutcome = {
   error: string | null;
 };
 
+/** A release newer than the running app, already narrowed to the one file this
+ *  machine can use. */
+export type UpdateAvailable = {
+  version: string;
+  notesUrl: string;
+  /** `null` when the release carries nothing in this install's format: there is
+   *  an update, but fetching it is a manual job. */
+  assetName: string | null;
+  assetUrl: string | null;
+};
+
+export type UpdateStatus = {
+  /** The version running right now, straight from the binary. */
+  current: string;
+  available: UpdateAvailable | null;
+};
+
 export type AutoSwitched = {
   from: string;
   to: string;
@@ -119,4 +136,10 @@ export const api = {
     invoke<void>("set_autostart", { enabled }),
   /** `null` hands the choice back to the system locale. */
   setLanguage: (tag: Lang | null) => invoke<void>("set_language", { tag }),
+
+  updateStatus: () => invoke<UpdateStatus>("update_status"),
+  /** Downloads the package and hands it to the system installer. Resolves with
+   *  the file name the user is about to be shown. */
+  installUpdate: () => invoke<string>("install_update"),
+  openReleaseNotes: () => invoke<void>("open_release_notes"),
 };

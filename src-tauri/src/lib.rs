@@ -4,6 +4,7 @@ mod i18n;
 mod oauth;
 mod store;
 mod tray;
+mod update;
 mod usage;
 
 use actions::{AutoSwitch, CurrentAccount};
@@ -32,6 +33,14 @@ const POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// held the login lock against land seconds after that session lets go, rather
 /// than at the next usage tick.
 const TOKEN_CHECK_INTERVAL: Duration = Duration::from_secs(20);
+
+/// How often the app looks for a release newer than itself.
+///
+/// Rare on purpose. A version check is not news that goes stale in minutes, the
+/// endpoint is somebody else's and answers unauthenticated requests sixty times
+/// an hour per address, and the first pass runs at launch — which for an app
+/// that lives in the tray across reboots is the one that matters.
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// How long after launch the first check runs. Waiting a whole `POLL_INTERVAL`
 /// meant an app opened on an account that is already spent sat there doing
@@ -321,6 +330,32 @@ struct Settings {
     resolved_language: String,
 }
 
+/// What the last check found, for a window that opened after it ran.
+#[tauri::command]
+fn update_status(latest: State<'_, update::Latest>) -> update::Status {
+    update::Status {
+        current: update::running_version().to_string(),
+        available: latest.get(),
+    }
+}
+
+/// Show what changed, in the browser.
+#[tauri::command]
+fn open_release_notes(latest: State<'_, update::Latest>) -> Result<(), String> {
+    let available = latest.get().ok_or_else(|| i18n::t("errors.no_update"))?;
+    to_string_err(update::open_notes(&available))
+}
+
+/// Fetch the new package and hand it to the desktop. What happens next is the
+/// system installer's business, and the password it asks for is its own.
+#[tauri::command]
+async fn install_update(latest: State<'_, update::Latest>) -> Result<String, String> {
+    let available = latest
+        .get()
+        .ok_or_else(|| i18n::t("errors.no_update"))?;
+    to_string_err(update::fetch_and_open(&available).await)
+}
+
 #[tauri::command]
 fn get_settings(app: AppHandle) -> Result<Settings, String> {
     Ok(Settings {
@@ -424,6 +459,30 @@ async fn poll_usage(app: AppHandle) {
     }
 }
 
+/// Look for a newer release, at launch and a few times a day after that.
+async fn poll_updates(app: AppHandle) {
+    loop {
+        match update::check().await {
+            Ok(found) => {
+                let latest = app.state::<update::Latest>();
+                // Only when it changes: the check outlives many windows, and
+                // re-announcing the same version every six hours would make the
+                // badge something to dismiss rather than something to read.
+                if latest.set(found.clone()) {
+                    if let Some(available) = found {
+                        let _ = app.emit("update-available", available);
+                    }
+                }
+            }
+            // Offline, rate-limited, or the API changed shape. None of it is
+            // worth interrupting anyone over, and the next pass costs nothing.
+            Err(e) => eprintln!("update check: {e:#}"),
+        }
+
+        tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
+    }
+}
+
 /// Keep every saved account's token alive.
 ///
 /// Claude Code renews only the login it is running under, and only while it is
@@ -483,6 +542,7 @@ pub fn run() {
             None,
         ))
         .manage(Cache::load())
+        .manage(update::Latest::default())
         .invoke_handler(tauri::generate_handler![
             list_profiles,
             current_account,
@@ -503,6 +563,9 @@ pub fn run() {
             set_start_hidden,
             set_autostart,
             set_language,
+            update_status,
+            install_update,
+            open_release_notes,
         ])
         .setup(|app| {
             tray::build(app.handle())?;
@@ -526,6 +589,8 @@ pub fn run() {
             // would otherwise stay empty until something else asked.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(keep_tokens_fresh(handle));
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(poll_updates(handle));
             Ok(())
         })
         .on_window_event(|window, event| match event {

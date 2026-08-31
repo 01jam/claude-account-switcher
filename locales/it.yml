@@ -62,6 +62,9 @@ autoswitch:
   switched: "Passato a «{to}»: {from} ha raggiunto {reason}."
   exhausted: Soglia raggiunta ({reason}) ma nessun altro account è disponibile.
 
+startup:
+  picked: "Avviato su «{name}»: è l'account con il margine settimanale più ampio ({used}% della sua settimana usato)."
+
 accounts:
   list_label: Account salvati
   empty_title: Nessun account salvato.
@@ -107,6 +110,8 @@ settings:
   title: Impostazioni
   auto_switch_title: Switch automatico
   auto_switch_hint: Quando un contatore supera la sua soglia, passa all'account successivo nell'ordine della lista.
+  start_on_freest_title: Parti dall'account più libero
+  start_on_freest_hint: All'avvio passa all'account con più settimana disponibile rispetto ai giorni che mancano al suo azzeramento.
   autostart_title: Avvia all'accesso
   autostart_hint: L'app parte da sola quando accedi, così l'icona è sempre nella barra.
   start_hidden_title: Avvia nella barra

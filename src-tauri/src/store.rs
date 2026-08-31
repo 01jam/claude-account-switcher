@@ -65,6 +65,9 @@ struct State {
     /// Start with the window hidden, leaving only the tray icon.
     #[serde(default)]
     start_hidden: bool,
+    /// At launch, switch to whichever account has the widest weekly margin.
+    #[serde(default)]
+    start_on_freest: bool,
     /// UI language override as a tag (`it`, `en`). Absent means "follow the
     /// system", which is what a fresh install does.
     #[serde(default)]
@@ -329,6 +332,16 @@ pub fn start_hidden() -> Result<bool> {
 pub fn set_start_hidden(enabled: bool) -> Result<()> {
     let mut state = read_state()?;
     state.start_hidden = enabled;
+    write_state(&state)
+}
+
+pub fn start_on_freest() -> Result<bool> {
+    Ok(read_state()?.start_on_freest)
+}
+
+pub fn set_start_on_freest(enabled: bool) -> Result<()> {
+    let mut state = read_state()?;
+    state.start_on_freest = enabled;
     write_state(&state)
 }
 

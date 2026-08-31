@@ -26,6 +26,11 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// it, in percentage points.
 pub const WARN_MARGIN: f64 = 5.0;
 
+/// The unit the weekly window's remaining time is measured in, and the length
+/// of the window itself.
+const DAY_MS: f64 = 86_400_000.0;
+const WEEK_DAYS: f64 = 7.0;
+
 /// How long a fetched snapshot is served from cache.
 ///
 /// Just under the cadence floor, and that shortfall is deliberate. The budget
@@ -149,6 +154,105 @@ impl Usage {
             (seven_day - margin).max(1.0),
         )
     }
+
+    /// The weekly room left, spread over the days that window still has to
+    /// run: the percentage points a day this account can afford between now
+    /// and its reset. Higher is freer, and it is what the launch-time choice
+    /// ranks accounts on.
+    ///
+    /// Dividing is what makes the two halves of the question one number — 20%
+    /// left with six days to go is a tighter week than 70% left the day before
+    /// a reset. A window resetting inside the day is floored at one day: below
+    /// that the ratio runs away, and "it resets in ten minutes" is no reason to
+    /// start on an account with nothing left in it right now. A window that
+    /// names no reset is measured against the whole seven, which is the most
+    /// cautious reading of a date we do not have.
+    pub fn weekly_room_per_day(&self, now: u64) -> Option<f64> {
+        let week = self.seven_day.as_ref()?;
+        let days = week
+            .days_to_reset(now)
+            .unwrap_or(WEEK_DAYS)
+            .clamp(1.0, WEEK_DAYS);
+        Some((100.0 - week.utilization).max(0.0) / days)
+    }
+}
+
+impl Window {
+    /// How many days until this window resets, when the endpoint says so. A
+    /// fraction rather than a count: the caller divides by it, it is not for
+    /// printing.
+    pub fn days_to_reset(&self, now: u64) -> Option<f64> {
+        let at = epoch_ms(self.resets_at.as_deref()?)?;
+        Some(((at - now as i64) as f64 / DAY_MS).max(0.0))
+    }
+}
+
+/// Epoch milliseconds for the RFC-3339 instant this endpoint dates its resets
+/// with: `2026-08-30T22:59:59.832072+00:00`, and sometimes `Z` in place of the
+/// offset. Hand-rolled because that is the only date this app ever reads, and a
+/// calendar library for one field is a dependency kept for its own sake.
+fn epoch_ms(iso: &str) -> Option<i64> {
+    let (date, rest) = iso.split_once(['T', 't', ' '])?;
+    let mut fields = date.split('-');
+    let year: i64 = fields.next()?.parse().ok()?;
+    let month: u32 = fields.next()?.parse().ok()?;
+    let day: u32 = fields.next()?.parse().ok()?;
+
+    // What follows the seconds is `Z`, an offset, or nothing at all — and a
+    // missing offset means UTC here, which is what this endpoint sends anyway.
+    let (clock, offset) = match rest.strip_suffix(['Z', 'z']) {
+        Some(head) => (head, 0),
+        None => match rest.rfind(['+', '-']) {
+            Some(at) => (&rest[..at], offset_ms(&rest[at..])?),
+            None => (rest, 0),
+        },
+    };
+
+    let mut parts = clock.split(':');
+    let hours: i64 = parts.next()?.parse().ok()?;
+    let minutes: i64 = parts.next()?.parse().ok()?;
+    let field = parts.next().unwrap_or("0");
+    let (seconds, millis) = match field.split_once('.') {
+        // However many digits the fraction carries, only the first three are
+        // milliseconds; this endpoint sends six.
+        Some((whole, fraction)) => {
+            let mut digits: String = fraction.chars().take(3).collect();
+            while digits.len() < 3 {
+                digits.push('0');
+            }
+            (whole.parse::<i64>().ok()?, digits.parse::<i64>().ok()?)
+        }
+        None => (field.parse::<i64>().ok()?, 0),
+    };
+
+    let seconds = days_from_civil(year, month, day) * 86_400 + hours * 3_600 + minutes * 60 + seconds;
+    Some(seconds * 1_000 + millis - offset)
+}
+
+/// `+02:00`, `-0500` and `+00` are all shapes RFC 3339 and its neighbours allow.
+fn offset_ms(tail: &str) -> Option<i64> {
+    let sign = if tail.starts_with('-') { -1 } else { 1 };
+    let body = tail.get(1..)?;
+    let (hours, minutes) = match body.split_once(':') {
+        Some((h, m)) => (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?),
+        None if body.len() == 4 => (body[..2].parse().ok()?, body[2..].parse().ok()?),
+        None => (body.parse::<i64>().ok()?, 0),
+    };
+    Some(sign * (hours * 3_600 + minutes * 60) * 1_000)
+}
+
+/// Days between the epoch and a civil date, by Howard Hinnant's closed form —
+/// the same one the C++ standard's calendar is built on.
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    // March-based years, so that the leap day lands at the end and the month
+    // lengths fall into the pattern `(153 * m + 2) / 5` counts off.
+    let year = year - if month <= 2 { 1 } else { 0 };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let month = month as i64;
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day as i64 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -710,6 +814,83 @@ mod tests {
     fn a_tiny_threshold_does_not_warn_on_an_idle_account() {
         let idle = parse(r#"{"five_hour": {"utilization": 0.0}}"#);
         assert!(idle.approaching(2.0, 2.0, WARN_MARGIN).is_none());
+    }
+
+    /// The one date this app reads, in every shape the endpoint has been seen
+    /// to write it in. Fractions longer than milliseconds, `Z` or a signed
+    /// offset, and the offset in either of its two spellings.
+    #[test]
+    fn a_reset_instant_parses_however_it_is_written() {
+        assert_eq!(epoch_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(epoch_ms("1970-01-02T00:00:00Z"), Some(86_400_000));
+        assert_eq!(
+            epoch_ms("2026-08-30T22:59:59.832072+00:00"),
+            Some(1_788_130_799_832)
+        );
+        // The same instant, said three ways.
+        assert_eq!(
+            epoch_ms("2026-08-31T00:59:59.832+02:00"),
+            Some(1_788_130_799_832)
+        );
+        assert_eq!(
+            epoch_ms("2026-08-30T17:59:59.832-0500"),
+            Some(1_788_130_799_832)
+        );
+        // A leap day, and a date on the far side of the epoch.
+        assert_eq!(epoch_ms("2024-02-29T00:00:00Z"), Some(1_709_164_800_000));
+        assert_eq!(epoch_ms("1969-12-31T23:59:59Z"), Some(-1_000));
+        // Nothing usable is `None`, never a wrong number.
+        assert_eq!(epoch_ms("2026-08-30"), None);
+        assert_eq!(epoch_ms("not a date"), None);
+    }
+
+    /// The launch-time ranking: what is left, over the days it has to last.
+    #[test]
+    fn weekly_room_is_spread_over_the_days_that_are_left() {
+        const NOW: u64 = 1_787_529_600_000; // 2026-08-24T00:00:00Z
+        let week = |utilization: f64, resets_at: Option<&str>| Usage {
+            five_hour: None,
+            seven_day: Some(Window {
+                utilization,
+                resets_at: resets_at.map(str::to_string),
+            }),
+            fetched_at: NOW,
+        };
+
+        // 20 points to make six days last is a tighter week than 70 for one.
+        let tight = week(80.0, Some("2026-08-30T00:00:00Z"))
+            .weekly_room_per_day(NOW)
+            .expect("ranks");
+        let roomy = week(30.0, Some("2026-08-25T00:00:00Z"))
+            .weekly_room_per_day(NOW)
+            .expect("ranks");
+        assert!((tight - 20.0 / 6.0).abs() < 0.01);
+        assert_eq!(roomy, 70.0);
+        assert!(roomy > tight);
+
+        // Inside the day the divisor stops falling: a window resetting in two
+        // hours must not score as if it had eight times the room.
+        assert_eq!(
+            week(30.0, Some("2026-08-24T02:00:00Z")).weekly_room_per_day(NOW),
+            Some(70.0)
+        );
+        // A reset already past is the same case.
+        assert_eq!(
+            week(30.0, Some("2026-08-23T00:00:00Z")).weekly_room_per_day(NOW),
+            Some(70.0)
+        );
+        // No date to measure against: assume the whole window is ahead.
+        assert_eq!(week(30.0, None).weekly_room_per_day(NOW), Some(10.0));
+
+        // A spent week has no room, and an account with no weekly window
+        // cannot be ranked at all.
+        assert_eq!(
+            week(100.0, Some("2026-08-30T00:00:00Z")).weekly_room_per_day(NOW),
+            Some(0.0)
+        );
+        assert!(parse(r#"{"five_hour": {"utilization": 3.0}}"#)
+            .weekly_room_per_day(NOW)
+            .is_none());
     }
 
     /// The cache outlives a cooldown by design, and the auto-switch has to tell

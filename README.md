@@ -59,6 +59,30 @@ Usage for accounts that are **not** active is read with the stored token — and
 the app keeps that token alive itself, so the meters no longer go blank on an
 account nobody has run `claude` under lately. See below.
 
+### Starting on the freest account
+
+**Settings → Start on the freest account** (off by default) puts the app on the
+account with the most week left, once, at launch. "Most" is a ratio, not a
+percentage: what the weekly window has left, over the days it still has to
+cover.
+
+```
+room per day = (100 - week used) / days until the week resets
+```
+
+So 20 points to make six days last (3.3 a day) is a tighter week than 70 points
+for one day (70), and the second account wins. Below a day the divisor stops
+falling — a window resetting in ten minutes is not a reason to start on an
+account with nothing left in it right now — and a window that names no reset
+date is measured against the whole seven.
+
+It runs once per launch, before the window is up, and it is deliberately quiet
+about the cases it declines: an account whose usage cannot be read is not a
+candidate (a comparison against a blank is not one, and that holds for the
+account already in place), a login the app has never saved is left alone until
+you save it, and being on the freest account already means nothing happens.
+When it does move, the window says which account it landed on and why.
+
 ### Asking without being refused
 
 The endpoint publishes no budget, and this app spent a version finding its edge

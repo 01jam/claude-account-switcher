@@ -326,6 +326,8 @@ fn reorder_profiles(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
 struct Settings {
     auto_switch: bool,
     start_hidden: bool,
+    /// Pick the account with the widest weekly margin at launch.
+    start_on_freest: bool,
     autostart: bool,
     /// The saved override, or `null` for "follow the system".
     language: Option<String>,
@@ -368,6 +370,7 @@ fn get_settings(app: AppHandle) -> Result<Settings, String> {
     Ok(Settings {
         auto_switch: to_string_err(store::auto_switch())?,
         start_hidden: to_string_err(store::start_hidden())?,
+        start_on_freest: to_string_err(store::start_on_freest())?,
         // Absence of the autostart entry is a valid answer, not an error.
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
         language: to_string_err(store::language())?,
@@ -396,6 +399,40 @@ fn set_auto_switch(app: AppHandle, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 fn set_start_hidden(enabled: bool) -> Result<(), String> {
     to_string_err(store::set_start_hidden(enabled))
+}
+
+#[tauri::command]
+fn set_start_on_freest(enabled: bool) -> Result<(), String> {
+    to_string_err(store::set_start_on_freest(enabled))
+}
+
+/// The launch choice, held until the window comes and asks for it.
+#[derive(Default)]
+struct StartupPick(std::sync::Mutex<Option<actions::Picked>>);
+
+impl StartupPick {
+    fn set(&self, picked: actions::Picked) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(picked);
+        }
+    }
+
+    /// Handed over once. A launch is news exactly one time, and the window
+    /// re-reads this every time the language changes.
+    fn take(&self) -> Option<actions::Picked> {
+        self.0.lock().ok().and_then(|mut slot| slot.take())
+    }
+}
+
+/// What the launch-time choice came to, for a window that was not up when it
+/// was made — which, with "start in the bar", can be hours later.
+///
+/// The same shape as the update check, for the same reason: the event announcing
+/// it can be emitted before the webview has a listener, so the window also asks
+/// on its way up.
+#[tauri::command]
+fn startup_pick(pick: State<'_, StartupPick>) -> Option<actions::Picked> {
+    pick.take()
 }
 
 #[tauri::command]
@@ -432,6 +469,28 @@ async fn evaluate_auto_switch(app: &AppHandle, cache: &Cache) {
         Ok(AutoSwitch::Idle) => {}
         // A failed check is usually a network blip; the next tick retries.
         Err(e) => eprintln!("auto-switch: {e:#}"),
+    }
+}
+
+/// Put the app on the account with the widest weekly margin, once, at launch.
+///
+/// A task of its own rather than a step in `poll_usage`: that one waits out
+/// `STARTUP_DELAY` first, and a switch that lands fifteen seconds into a session
+/// lands under the user's hands. This runs immediately and buys its own numbers
+/// — the window's first fetch, moments later, is served from the same cache
+/// entries rather than paying for them twice.
+async fn choose_startup_account(app: AppHandle) {
+    let cache = app.state::<Cache>();
+    match actions::start_on_freest(&cache).await {
+        Ok(Some(picked)) => {
+            app.state::<StartupPick>().set(picked.clone());
+            notify_changed(&app);
+            let _ = app.emit("startup-picked", picked);
+        }
+        // Off, nothing readable, or already on the freest account: all three
+        // are the same silence.
+        Ok(None) => {}
+        Err(e) => eprintln!("startup account: {e:#}"),
     }
 }
 
@@ -556,6 +615,7 @@ pub fn run() {
         ))
         .manage(Cache::load())
         .manage(update::Latest::default())
+        .manage(StartupPick::default())
         .invoke_handler(tauri::generate_handler![
             list_profiles,
             current_account,
@@ -574,6 +634,8 @@ pub fn run() {
             get_settings,
             set_auto_switch,
             set_start_hidden,
+            set_start_on_freest,
+            startup_pick,
             set_autostart,
             set_language,
             update_status,
@@ -595,6 +657,11 @@ pub fn run() {
                 tray::show_window(app.handle());
             }
 
+            // Before the polling task, and before the user has touched
+            // anything: this is the one decision that has to be made while
+            // "at launch" is still true.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(choose_startup_account(handle));
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(poll_usage(handle));
             // Straight away, with no startup delay: an account whose token

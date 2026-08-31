@@ -38,6 +38,11 @@ const TOGGLES: { key: ToggleKey; title: string; hint: string }[] = [
     hint: "settings.auto_switch_hint",
   },
   {
+    key: "startOnFreest",
+    title: "settings.start_on_freest_title",
+    hint: "settings.start_on_freest_hint",
+  },
+  {
     key: "autostart",
     title: "settings.autostart_title",
     hint: "settings.autostart_hint",

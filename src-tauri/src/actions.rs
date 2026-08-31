@@ -239,6 +239,98 @@ pub async fn auto_switch(cache: &usage::Cache) -> Result<AutoSwitch> {
     Ok(AutoSwitch::Exhausted { reason })
 }
 
+/// The account launch settled on, and the number it was settled by — what the
+/// window says about a switch nobody pressed a button for.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Picked {
+    pub to: String,
+    /// Weekly utilisation at the moment of the choice.
+    pub used: f64,
+}
+
+/// One account in the running, with the figure it is ranked on.
+struct Candidate {
+    profile: Profile,
+    room: f64,
+    used: f64,
+    active: bool,
+}
+
+/// Start on the account with the widest weekly margin.
+///
+/// "Widest" is `Usage::weekly_room_per_day`: what the week has left over the
+/// days it still has to cover — see there for why those two are one number
+/// rather than a percentage and a caveat. Runs once, at launch, and only with
+/// the setting on; from then on the rotation is the auto-switch's business.
+///
+/// An account whose usage cannot be read is not a candidate — this is a
+/// comparison, and one made against a blank is not one. That holds for the
+/// account already in place too: it cannot defend its turn with numbers nobody
+/// can see. With nothing readable at all, or with the freest account already
+/// the active one, nothing happens and nothing is said.
+pub async fn start_on_freest(cache: &usage::Cache) -> Result<Option<Picked>> {
+    if !store::start_on_freest()? {
+        return Ok(None);
+    }
+    // A login the app has never saved is not ours to move: switching would file
+    // it away under `backups/` and take the user off the account they signed in
+    // to. The window asks them to save it first, and until they do this waits.
+    if current_account()?.unsaved {
+        return Ok(None);
+    }
+
+    let active = store::active()?;
+    let now = store::now_ms();
+    let mut ranked: Vec<Candidate> = Vec::new();
+
+    for profile in store::list()? {
+        // Cached, not forced: at launch the cache is usually cold, so this is
+        // one request per account — and the window's own first fetch, moments
+        // later, is served from these same entries rather than buying them
+        // again.
+        let Ok(usage) = usage::for_profile(cache, &profile.id, false).await else {
+            continue;
+        };
+        // The bar the auto-switch holds itself to, for the same reason: a
+        // reading old enough to have been overtaken cannot move anyone.
+        if !usage.is_actionable() {
+            continue;
+        }
+        let (Some(room), Some(week)) = (usage.weekly_room_per_day(now), usage.seven_day.as_ref())
+        else {
+            continue;
+        };
+        ranked.push(Candidate {
+            active: active.as_deref() == Some(profile.id.as_str()),
+            used: week.utilization,
+            room,
+            profile,
+        });
+    }
+
+    // Widest margin first, and on a tie the account already in place keeps it:
+    // a switch that buys nothing is still a switch, with a backup and a
+    // rewritten login behind it.
+    ranked.sort_by(|a, b| {
+        b.room
+            .partial_cmp(&a.room)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(b.active.cmp(&a.active))
+    });
+
+    match ranked.first() {
+        Some(best) if !best.active => {
+            switch_to(&best.profile.id)?;
+            Ok(Some(Picked {
+                to: best.profile.label.clone(),
+                used: best.used,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Clear the live login so `claude` prompts for a fresh one. The active profile
 /// keeps its own copy, so this is not destructive.
 pub fn logout_current() -> Result<()> {

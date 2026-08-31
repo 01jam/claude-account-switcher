@@ -26,6 +26,7 @@ import {
   type Profile,
   type ProfileUsage,
   type Settings,
+  type StartupPick,
   type ToggleKey,
   type TokenOutcome,
   type RefreshReport,
@@ -46,6 +47,14 @@ import {
   type Lang,
   type Translate,
 } from "./i18n";
+
+/** Which call each switch in the settings dialog stands for. */
+const SETTERS: Record<ToggleKey, (enabled: boolean) => Promise<void>> = {
+  autoSwitch: api.setAutoSwitch,
+  startOnFreest: api.setStartOnFreest,
+  startHidden: api.setStartHidden,
+  autostart: api.setAutostart,
+};
 
 export default function App() {
   // The backend is the authority on the language, but it takes a round-trip to
@@ -135,6 +144,17 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       );
     });
 
+    // The account the app opened on. The choice is usually made before this
+    // listener exists — and with the window left in the tray, hours before one
+    // does — so it is both pushed and, once, asked for.
+    const unlistenPicked = listen<StartupPick>("startup-picked", (e) => {
+      setNotice(startupNotice(t, e.payload));
+    });
+    api
+      .startupPick()
+      .then((picked) => picked && setNotice(startupNotice(t, picked)))
+      .catch(() => {});
+
     const unlistenUpdate = listen<UpdateAvailable>("update-available", (e) => {
       setUpdate((prev) => ({
         current: prev?.current ?? "",
@@ -168,6 +188,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       unlistenExhausted.then((f) => f());
       unlistenToken.then((f) => f());
       unlistenUsage.then((f) => f());
+      unlistenPicked.then((f) => f());
       unlistenUpdate.then((f) => f());
       window.removeEventListener("focus", onWake);
       document.removeEventListener("visibilitychange", onWake);
@@ -335,13 +356,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         onChange={(key: ToggleKey, value: boolean) => {
           // Optimistic: the toggle should not lag behind the pointer.
           setSettings((s) => (s ? { ...s, [key]: value } : s));
-          const call =
-            key === "autoSwitch"
-              ? api.setAutoSwitch
-              : key === "autostart"
-                ? api.setAutostart
-                : api.setStartHidden;
-          run(() => call(value));
+          run(() => SETTERS[key](value));
         }}
         update={update}
         onInstallUpdate={() =>
@@ -371,6 +386,15 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       />
     </main>
   );
+}
+
+/** Why the app is on an account nobody selected: the launch-time choice, and
+ *  the week that decided it. */
+function startupNotice(t: Translate, picked: StartupPick): string {
+  return t("startup.picked", {
+    name: picked.to,
+    used: Math.round(picked.used),
+  });
 }
 
 /** What a press of Refresh has to say for itself. Reporting "nothing was due"

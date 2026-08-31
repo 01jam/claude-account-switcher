@@ -54,6 +54,9 @@ autoswitch:
   switched: "Switched to “{to}”: {from} reached {reason}."
   exhausted: Threshold reached ({reason}) but no other account is available.
 
+startup:
+  picked: "Started on “{name}”: the widest weekly margin of the saved accounts ({used}% of its week used)."
+
 accounts:
   list_label: Saved accounts
   empty_title: No saved accounts.
@@ -99,6 +102,8 @@ settings:
   title: Settings
   auto_switch_title: Auto-switch
   auto_switch_hint: When a meter passes its threshold, move to the next account in list order.
+  start_on_freest_title: Start on the freest account
+  start_on_freest_hint: At launch, switch to the account with the most week left for the days before it resets.
   autostart_title: Launch at login
   autostart_hint: The app starts on its own when you sign in, so the icon is always in the bar.
   start_hidden_title: Start in the bar

@@ -104,6 +104,8 @@ export type AutoSwitched = {
 export type Settings = {
   autoSwitch: boolean;
   startHidden: boolean;
+  /** Open on the account with the widest weekly margin. */
+  startOnFreest: boolean;
   autostart: boolean;
   /** The saved override; `null` means "follow the system". */
   language: Lang | null;
@@ -114,7 +116,19 @@ export type Settings = {
 };
 
 /** The settings that are plain on/off switches. */
-export type ToggleKey = "autoSwitch" | "startHidden" | "autostart";
+export type ToggleKey =
+  | "autoSwitch"
+  | "startOnFreest"
+  | "startHidden"
+  | "autostart";
+
+/** The account launch settled on, and the weekly figure that settled it.
+ *  `null` when the setting is off, when nothing could be read, or when the app
+ *  was already on the freest account. */
+export type StartupPick = {
+  to: string;
+  used: number;
+};
 
 export const api = {
   listProfiles: () => invoke<Profile[]>("list_profiles"),
@@ -145,6 +159,11 @@ export const api = {
     invoke<void>("set_auto_switch", { enabled }),
   setStartHidden: (enabled: boolean) =>
     invoke<void>("set_start_hidden", { enabled }),
+  setStartOnFreest: (enabled: boolean) =>
+    invoke<void>("set_start_on_freest", { enabled }),
+  /** Answered once per launch: the window also listens for the event, since
+   *  the choice is usually made before the webview is up to hear it. */
+  startupPick: () => invoke<StartupPick | null>("startup_pick"),
   setAutostart: (enabled: boolean) =>
     invoke<void>("set_autostart", { enabled }),
   /** `null` hands the choice back to the system locale. */

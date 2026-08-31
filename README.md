@@ -46,7 +46,7 @@ the auto-switch does not fire.
 
 Each meter carries a draggable marker: the **threshold** past which the account
 counts as spent (100% by default, so only at a full limit). With auto-switch on,
-the app checks the active account every 5 minutes and, as soon as **either**
+the app checks the active account every minute and, as soon as **either**
 counter reaches its own threshold, moves to the next account **in list order** —
 which you rearrange by dragging rows from the handle on the left.
 
@@ -59,10 +59,19 @@ Usage for accounts that are **not** active is read with the stored token — and
 the app keeps that token alive itself, so the meters no longer go blank on an
 account nobody has run `claude` under lately. See below.
 
-The endpoint rate-limits, so requests are kept sparse: a response stays valid
-for 5 minutes, the periodic check runs every 5 minutes and reuses that cache.
-After a `429` that account is left alone for a while and keeps showing its last
-known numbers rather than emptying its meters.
+The endpoint rate-limits, so the request rate is fixed rather than left to
+chance: the periodic check runs every minute and forces past the cache, making
+it exactly one request per account per minute. The cache — a reading stays valid
+for a minute — is there for everything else, so that a window being used, a tray
+rebuild or a switch adds no requests of its own. After a `429` that account is
+left alone for a while and keeps showing its last known numbers rather than
+emptying its meters.
+
+That check is also what the open window listens to: each round's numbers are
+pushed to it rather than left for it to come and fetch. A timer in the window
+would be the webview's, and the webview is hidden in the tray for most of this
+app's life, where timers are throttled or stopped outright — which is how meters
+could sit on a stale reading until someone pressed **Refresh**.
 
 **That account, not all of them.** The endpoint answers for the token it was
 handed, so a refusal is about the account behind it — typically one sitting at
@@ -83,7 +92,7 @@ included. Held only in memory, every restart began blind and re-asked for
 everything — the surest way to earn a `429` and then spend the cooldown with no
 numbers to decide on, auto-switch stalled.
 
-The first check runs 15 seconds after launch, not after five minutes; and
+The first check runs 15 seconds after launch, not a full interval later; and
 pressing **Refresh** renews whatever tokens are due and then re-reads the
 numbers, since one is what buys the other. It also lifts a running cooldown —
 at most once every 3 minutes, so a held button cannot become a stream of refused
@@ -92,8 +101,9 @@ requests. Someone looking at four-hour-old numbers knows something a blanket
 the press is too soon, the notice says when the next attempt is due rather than
 leaving the unchanged numbers to speak for themselves.
 
-While a cooldown runs, cards carry the age of what they are showing ("numbers
-from 3h ago") and when the app will ask again. Kept numbers that look freshly
+Once a reading is more than five minutes old — several rounds missed, which in
+practice means a cooldown — cards carry its age ("numbers from 3h ago") and when
+the app will ask again. Kept numbers that look freshly
 loaded are how a spent account appears to have room left.
 
 The auto-switch will not act on a reading older than 15 minutes. Showing an old

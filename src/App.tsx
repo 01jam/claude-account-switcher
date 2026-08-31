@@ -118,22 +118,34 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       );
     });
 
-    const onFocus = () => {
+    // The meters are pushed, not pulled. A timer here would be the webview's,
+    // and the webview is asleep for most of this app's life — it lives in the
+    // tray. The task that sends this runs whether the window is up or not.
+    const unlistenUsage = listen<ProfileUsage[]>("usage-updated", (e) => {
+      setUsage(Object.fromEntries(e.payload.map((u) => [u.id, u])));
+    });
+
+    // Coming back into view: a push that landed while the window was hidden is
+    // not replayed, so the cache is re-read on the way in — the poll has been
+    // keeping it current the whole time, so this costs no request. `focus`
+    // alone misses being shown from the tray, which on Linux does not reliably
+    // reach the page as one.
+    const onWake = () => {
+      if (document.visibilityState !== "visible") return;
       reload();
       loadUsage();
     };
-    window.addEventListener("focus", onFocus);
-
-    // Matched to the backend cache: polling faster only earns 429s.
-    const timer = setInterval(() => loadUsage(), 300_000);
+    window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onWake);
 
     return () => {
       unlistenChanged.then((f) => f());
       unlistenSwitched.then((f) => f());
       unlistenExhausted.then((f) => f());
       unlistenToken.then((f) => f());
-      window.removeEventListener("focus", onFocus);
-      clearInterval(timer);
+      unlistenUsage.then((f) => f());
+      window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onWake);
     };
   }, [reload, loadUsage, t]);
 

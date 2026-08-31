@@ -25,9 +25,17 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// it, in percentage points.
 pub const WARN_MARGIN: f64 = 5.0;
 
-/// How long a fetched snapshot is served from cache. The underlying numbers move
-/// slowly, and this keeps a busy UI from hammering the endpoint.
-const CACHE_TTL_MS: u64 = 300_000;
+/// How long a fetched snapshot is served from cache. Short, because the polling
+/// task is what refreshes it and forces past it anyway: all this has to do is
+/// stop one round of window activity — several cards, a tray rebuild, a switch —
+/// from becoming a request each.
+const CACHE_TTL_MS: u64 = 60_000;
+
+/// How old a reading has to be before the card admits to it. Several polls'
+/// worth, deliberately: the caption is for numbers the endpoint would not give
+/// again — a cooldown, a token that cannot be renewed — and at one poll a minute
+/// a single missed round is not worth putting on screen.
+const STALE_AFTER_MS: u64 = 300_000;
 
 /// How old a reading may be and still be worth acting on. Well past the TTL,
 /// because a cooldown is allowed to keep numbers on screen — but a five-hour
@@ -735,9 +743,9 @@ pub async fn for_all(cache: &Cache, force: bool) -> Result<Vec<ProfileUsage>> {
         let entry = match result {
             Ok(usage) => ProfileUsage {
                 id,
-                // Past its TTL means it was kept, not fetched: the cooldown, or
-                // an account whose numbers could not be refreshed this round.
-                stale: store::now_ms().saturating_sub(usage.fetched_at) >= CACHE_TTL_MS,
+                // Old enough to say so: the cooldown, or an account whose
+                // numbers have not been refreshed for several rounds running.
+                stale: store::now_ms().saturating_sub(usage.fetched_at) >= STALE_AFTER_MS,
                 usage: Some(usage),
                 error: None,
                 retry_at,

@@ -14,22 +14,30 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use usage::{Cache, ProfileUsage};
 
-/// How often usage is refreshed and the auto-switch re-checked. Matched to the
-/// usage cache TTL: faster than this only produces refused requests.
-const POLL_INTERVAL: Duration = Duration::from_secs(300);
+/// How often usage is refreshed and the auto-switch re-checked.
+///
+/// The poll forces past the cache TTL rather than matching it. Matching it left
+/// the real cadence to chance: a refresh landing a moment before an entry aged
+/// out was handed the old copy, timestamp and all, and the next true fetch was
+/// a whole interval further on — meters that sat still for twice as long as
+/// anyone reading this constant would expect. Forcing makes it exactly one
+/// request per account per interval, which is the rate the 429 cooldown is
+/// there to bound.
+const POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// How often the token keeper looks at the expiry dates.
 ///
 /// Nothing leaves the machine unless a token is actually due, so this can be
 /// far tighter than the usage poll: it is what makes a renewal that a session
 /// held the login lock against land seconds after that session lets go, rather
-/// than at the next five-minute tick.
+/// than at the next usage tick.
 const TOKEN_CHECK_INTERVAL: Duration = Duration::from_secs(20);
 
 /// How long after launch the first check runs. Waiting a whole `POLL_INTERVAL`
 /// meant an app opened on an account that is already spent sat there doing
-/// nothing for five minutes — and every restart put the clock back to zero.
-/// This is just long enough for the window's own first fetch to fill the cache.
+/// nothing — and every restart put the clock back to zero. This is just long
+/// enough for the window's own first fetch to fill the cache, which is why the
+/// first pass reads that cache instead of forcing past it.
 const STARTUP_DELAY: Duration = Duration::from_secs(15);
 
 /// Tell the UI and the tray that the store changed.
@@ -391,16 +399,27 @@ async fn evaluate_auto_switch(app: &AppHandle, cache: &Cache) {
 /// warning badge are worth keeping current on their own.
 async fn poll_usage(app: AppHandle) {
     tokio::time::sleep(STARTUP_DELAY).await;
+    // The first pass rides on what the window fetched as it opened; every later
+    // one is itself the refresh, and forces.
+    let mut force = false;
+
     loop {
         let cache = app.state::<Cache>();
-        // Not forced: if the window just refreshed, reuse what it fetched.
-        if let Err(e) = usage::for_all(&cache, false).await {
-            eprintln!("usage refresh: {e:#}");
+        match usage::for_all(&cache, force).await {
+            // Pushed to the window rather than left for it to come and find.
+            // Its own timer would be the webview's, and the webview spends most
+            // of this app's life hidden in the tray, where timers are throttled
+            // or stopped outright — this task is not.
+            Ok(entries) => {
+                let _ = app.emit("usage-updated", entries);
+            }
+            Err(e) => eprintln!("usage refresh: {e:#}"),
         }
         refresh_tray(&app);
         evaluate_auto_switch(&app, &cache).await;
         drop(cache);
 
+        force = true;
         tokio::time::sleep(POLL_INTERVAL).await;
     }
 }

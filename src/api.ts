@@ -74,6 +74,19 @@ export type UpdateAvailable = {
    *  an update, but fetching it is a manual job. */
   assetName: string | null;
   assetUrl: string | null;
+  assetSize: number | null;
+  /** Whether this machine installs the package itself, or can only put the file
+   *  somewhere and step back — a `.dmg` or an AppImage. Decided on the Rust
+   *  side so the button and its caption cannot promise different things. */
+  installs: boolean;
+};
+
+/** What pressing the button came to. A dismissed password dialog is not an
+ *  error: the user answered, and the answer was no. */
+export type InstallOutcome = {
+  kind: "installed" | "cancelled" | "downloaded" | "openedPage";
+  name: string | null;
+  version: string | null;
 };
 
 export type UpdateStatus = {
@@ -138,8 +151,8 @@ export const api = {
   setLanguage: (tag: Lang | null) => invoke<void>("set_language", { tag }),
 
   updateStatus: () => invoke<UpdateStatus>("update_status"),
-  /** Downloads the package and hands it to the system installer. Resolves with
-   *  the file name the user is about to be shown. */
-  installUpdate: () => invoke<string>("install_update"),
+  /** Downloads the package and, where the machine has a package manager for
+   *  it, installs it — the password prompt in the middle is polkit's own. */
+  installUpdate: () => invoke<InstallOutcome>("install_update"),
   openReleaseNotes: () => invoke<void>("open_release_notes"),
 };

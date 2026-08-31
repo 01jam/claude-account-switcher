@@ -346,14 +346,14 @@ fn open_release_notes(latest: State<'_, update::Latest>) -> Result<(), String> {
     to_string_err(update::open_notes(&available))
 }
 
-/// Fetch the new package and hand it to the desktop. What happens next is the
-/// system installer's business, and the password it asks for is its own.
+/// Fetch the new package and install it. The password prompt in the middle of
+/// this is polkit's own; nothing of it passes through here.
 #[tauri::command]
-async fn install_update(latest: State<'_, update::Latest>) -> Result<String, String> {
+async fn install_update(latest: State<'_, update::Latest>) -> Result<update::Outcome, String> {
     let available = latest
         .get()
         .ok_or_else(|| i18n::t("errors.no_update"))?;
-    to_string_err(update::fetch_and_open(&available).await)
+    to_string_err(update::fetch_and_install(&available).await)
 }
 
 #[tauri::command]

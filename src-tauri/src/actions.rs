@@ -330,7 +330,7 @@ pub fn open_login_terminal() -> Result<()> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn which(bin: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn which(bin: &str) -> Option<std::path::PathBuf> {
     std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
         .unwrap_or_default()

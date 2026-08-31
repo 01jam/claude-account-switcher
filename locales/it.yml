@@ -121,11 +121,15 @@ update:
   available: "È disponibile la versione {version}. Stai usando la {current}."
   notes: Note di rilascio
   install: Scarica e installa
-  install_hint: Scarica il pacchetto e lo apre con l'installer di sistema, che chiederà la tua password. Niente viene installato di nascosto.
+  install_hint: "Scarica il pacchetto e lo installa con il gestore pacchetti di sistema. La richiesta della password nel mezzo è di sistema: questa app non la vede mai."
+  handoff_hint: "Scarica il pacchetto e te lo mostra: su questo sistema metterlo al suo posto è un passaggio che fai tu."
   open_page: Apri la pagina della release
   open_page_hint: Questa release non ha un pacchetto nel formato da cui è stata installata questa copia, quindi il download va fatto a mano.
   working: Scaricamento…
-  done: "{name} scaricato — da qui in poi tocca all'installer di sistema."
+  working_install: Scarico e installo…
+  done: "{name} scaricato — metterlo al suo posto tocca a te."
+  installed: "Versione {version} installata. Esci dal menu del tray e riavvia l'app per usarla."
+  cancelled: Installazione annullata — non è stato cambiato niente.
 
 errors:
   no_login: nessun login trovato — esegui `claude` e accedi prima di salvare
@@ -139,5 +143,7 @@ errors:
   login_busy: Claude Code sta scrivendo il suo login proprio adesso
   invalid_token: token non valido o scaduto
   api_status: l'API ha risposto {status}
+  download_truncated: il download non è arrivato intero — non è stato installato niente
+  install_failed: "il gestore pacchetti è uscito con {status}"
   no_update: nessuna versione più recente da installare
   no_opener: "non riesco a passare il file al desktop: {error}"

@@ -1,12 +1,15 @@
 //! Whether a newer release is out, and getting its package onto the machine.
 //!
-//! Installing is deliberately not part of this. Every format this project ships
-//! needs either root or a gesture the user has to make themselves: a `.deb` or
-//! `.rpm` goes through the system's own installer, a `.dmg` gets dragged. An
-//! app that asked for a password to write outside its own directory would be
-//! asking for more trust than a version check is worth. So this fetches the
-//! file and hands it to the desktop, which is the last point where it can help
-//! without holding something it has no business holding.
+//! Installing a `.deb` or `.rpm` means running the package manager as root, and
+//! that runs through `pkexec` — polkit puts up its own dialog, takes the
+//! password itself, and this app never sees or holds it. Handing the file to
+//! the desktop instead was the first attempt and it does not work where it
+//! matters: on Ubuntu the default handler for a `.deb` is the Snap Store, which
+//! will not install a local package at all, so the update simply died there.
+//!
+//! What has no package manager is still handed over: a `.dmg` is mounted and
+//! dragged, an AppImage is a file the user keeps somewhere of their choosing.
+//! Neither is ours to do behind their back.
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -46,6 +49,9 @@ struct Release {
 struct Asset {
     name: String,
     browser_download_url: String,
+    /// Checked against what actually arrives. A short read handed to a package
+    /// manager running as root is worth one comparison to rule out.
+    size: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +71,11 @@ pub struct Available {
     /// and saying so beats a button that quietly downloads the wrong thing.
     pub asset_name: Option<String>,
     pub asset_url: Option<String>,
+    pub asset_size: Option<u64>,
+    /// Whether this machine can install the package itself, or can only put the
+    /// file somewhere and step back. Decided here so that the button and the
+    /// sentence under it never promise different things.
+    pub installs: bool,
 }
 
 /// What the window asks for when it opens: which version is running, and
@@ -157,6 +168,71 @@ fn pick_asset<'a>(assets: &'a [Asset], suffix: &str) -> Option<&'a Asset> {
     assets.iter().find(|a| a.name.ends_with(suffix))
 }
 
+/// The package manager that takes a file of this kind, if this machine has one
+/// and a way to run it as root.
+///
+/// `apt-get install` rather than `dpkg -i`: an upgrade that pulls in a new
+/// dependency is apt's problem to solve, and it is the command that treats an
+/// already-installed package as something to replace rather than something to
+/// refuse.
+///
+/// Resolved to an absolute path rather than left to `pkexec` to look up: what a
+/// program named on a sanitised PATH resolves to is not a question worth
+/// leaving open for something about to run as root.
+#[cfg(target_os = "linux")]
+fn install_program(asset_name: &str) -> Option<(std::path::PathBuf, &'static [&'static str])> {
+    // Nothing here runs as root except through polkit's own dialog.
+    crate::actions::which("pkexec")?;
+
+    if asset_name.ends_with(".deb") {
+        crate::actions::which("apt-get").map(|bin| (bin, &["install", "-y"][..]))
+    } else if asset_name.ends_with(".rpm") {
+        [
+            ("dnf", &["install", "-y"][..]),
+            ("zypper", &["--non-interactive", "install"][..]),
+            ("rpm", &["-U"][..]),
+        ]
+        .into_iter()
+        .find_map(|(bin, args)| crate::actions::which(bin).map(|path| (path, args)))
+    } else {
+        // An AppImage is not installed. It is a file kept wherever its owner
+        // decided to keep it, and moving it there is not a decision this app
+        // gets to make for them.
+        None
+    }
+}
+
+/// A `.dmg` is mounted and dragged. That is the install, and it is the user's
+/// to perform.
+#[cfg(not(target_os = "linux"))]
+fn install_program(_asset_name: &str) -> Option<(std::path::PathBuf, &'static [&'static str])> {
+    None
+}
+
+/// What pressing the button came to. A dismissed password dialog is not a
+/// failure and must not be reported as one — the user said no, and the window
+/// should say so plainly and leave the offer standing.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Outcome {
+    pub kind: Kind,
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Kind {
+    /// The package manager ran and finished. The app on disk is the new one.
+    Installed,
+    /// polkit's dialog was dismissed.
+    Cancelled,
+    /// Downloaded, and handed to the desktop: there was nothing here to run.
+    Downloaded,
+    /// No package for this machine — the release page went to the browser.
+    OpenedPage,
+}
+
 // ---------------------------------------------------------------------------
 // Checking
 // ---------------------------------------------------------------------------
@@ -198,8 +274,10 @@ async fn check_against(current: &str) -> Result<Option<Available>> {
     Ok(Some(Available {
         version: release.tag_name.trim_start_matches('v').to_string(),
         notes_url: release.html_url,
+        installs: asset.is_some_and(|a| install_program(&a.name).is_some()),
         asset_name: asset.map(|a| a.name.clone()),
         asset_url: asset.map(|a| a.browser_download_url.clone()),
+        asset_size: asset.map(|a| a.size),
     }))
 }
 
@@ -207,15 +285,21 @@ async fn check_against(current: &str) -> Result<Option<Available>> {
 // Fetching
 // ---------------------------------------------------------------------------
 
-/// Download the package and hand it to the desktop. Returns what the user
-/// should now be looking at — a file name, or the release page when there was
-/// nothing here to download.
-pub async fn fetch_and_open(available: &Available) -> Result<String> {
+/// Download the package and get it installed.
+///
+/// Returns what actually happened rather than a bare success: a dismissed
+/// password dialog and a finished install are both "no error", and the window
+/// has to tell them apart.
+pub async fn fetch_and_install(available: &Available) -> Result<Outcome> {
     let (Some(name), Some(url)) = (&available.asset_name, &available.asset_url) else {
         // Nothing in this machine's format. The release page is the honest
         // answer, and a browser is better at it than this app is.
         open_with_desktop(&available.notes_url)?;
-        return Ok(available.notes_url.clone());
+        return Ok(Outcome {
+            kind: Kind::OpenedPage,
+            name: None,
+            version: None,
+        });
     };
 
     let bytes = client(DOWNLOAD_TIMEOUT)?
@@ -227,17 +311,75 @@ pub async fn fetch_and_open(available: &Available) -> Result<String> {
         .bytes()
         .await?;
 
-    // Downloads, not a cache directory: the user is about to be handed a
-    // password prompt by the installer, and the file it names should be
-    // somewhere they can find, check and delete.
+    // A short read is worth catching before it reaches a program running as
+    // root, however unlikely a package manager is to be fooled by one.
+    if available.asset_size.is_some_and(|size| bytes.len() as u64 != size) {
+        return Err(anyhow!(i18n::t("errors.download_truncated")));
+    }
+
+    // Downloads, not a cache directory: whatever happens next, the file should
+    // be somewhere the user can find, check and delete.
     let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
     let path = dir.join(name);
 
     let target = path.clone();
     tauri::async_runtime::spawn_blocking(move || std::fs::write(&target, &bytes)).await??;
 
-    open_with_desktop(&path.to_string_lossy())?;
-    Ok(name.clone())
+    let Some((program, args)) = install_program(name) else {
+        // No package manager takes this. An AppImage is shown in its folder
+        // rather than opened, since opening one runs it — a second copy of this
+        // app is not what the button promised.
+        let reveal = if name.ends_with(".AppImage") {
+            dir.to_string_lossy().to_string()
+        } else {
+            path.to_string_lossy().to_string()
+        };
+        open_with_desktop(&reveal)?;
+        return Ok(Outcome {
+            kind: Kind::Downloaded,
+            name: Some(name.clone()),
+            version: None,
+        });
+    };
+
+    let file = path.to_string_lossy().to_string();
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new("pkexec")
+            .arg(program)
+            .args(args)
+            .arg(&file)
+            .status()
+    })
+    .await??;
+
+    if status.success() {
+        return Ok(Outcome {
+            kind: Kind::Installed,
+            name: Some(name.clone()),
+            version: Some(available.version.clone()),
+        });
+    }
+
+    // 126 is polkit's: the dialog was dismissed, or the authorisation was
+    // refused. Either way the user has answered, and the answer was no.
+    if status.code() == Some(126) {
+        return Ok(Outcome {
+            kind: Kind::Cancelled,
+            name: Some(name.clone()),
+            version: None,
+        });
+    }
+
+    Err(anyhow!(i18n::t_args(
+        "errors.install_failed",
+        &[(
+            "status",
+            &status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string())
+        )]
+    )))
 }
 
 /// Open the release page in the browser. Reading what changed before installing
@@ -278,6 +420,7 @@ mod tests {
             .map(|n| Asset {
                 name: (*n).to_string(),
                 browser_download_url: format!("https://example.invalid/{n}"),
+                size: 1,
             })
             .collect()
     }

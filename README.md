@@ -170,16 +170,32 @@ Tags are compared as three numbers. Anything else — a `-beta.1`, a `nightly` �
 never counts as newer, because guessing where it sorts is how an app talks
 someone into a downgrade.
 
-**Installing is not automatic, and cannot honestly be.** Every format this
-project ships needs either root or a gesture from the user: a `.deb` or `.rpm`
-goes through the system's installer, a `.dmg` gets dragged. So the button
-downloads the package into your Downloads folder and opens it with whatever the
-desktop uses for that file — the installer's password prompt is the installer's,
-not this app's, and nothing is written outside the download until you answer it.
+**Installing** a `.deb` or `.rpm` runs the system package manager under
+`pkexec`: polkit puts up its own password dialog and takes the password itself,
+and this app never sees it. `apt-get install` rather than `dpkg -i`, so an
+upgrade that pulls in a new dependency is apt's problem to solve; for an `.rpm`
+it is `dnf`, `zypper` or `rpm`, whichever is installed. Dismissing the password
+dialog is reported as cancelled, not as a failure — you answered, and the answer
+was no.
+
+Handing the file to the desktop was the first attempt at this and it does not
+work where it matters: on Ubuntu the default handler for a `.deb` is the Snap
+Store, which will not install a local package at all, so the update simply died
+there.
+
+What no package manager takes is still handed over. A `.dmg` is mounted and
+dragged; an AppImage is shown in its folder rather than opened, since opening one
+would only start a second copy of the app. Either way the download lands in your
+Downloads folder, where you can check it or delete it, and its size is compared
+against what the release says before anything is run as root.
+
 The format is picked from how this copy was installed: an AppImage says so
 through its own environment, otherwise the choice is `.deb` or `.rpm` by
 distribution. A release with no package in that format still gets announced, and
 the button opens the release page instead of guessing.
+
+Installing does not replace the copy already running — quit from the tray menu
+and start it again to be on the new one.
 
 ### Claude Desktop is not involved
 

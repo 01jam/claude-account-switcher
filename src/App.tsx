@@ -32,6 +32,7 @@ import {
   type UpdateAvailable,
   type UpdateStatus,
 } from "./api";
+
 import AccountList from "./components/AccountList";
 import ResizeGrip from "./components/ResizeGrip";
 import SettingsDialog from "./components/SettingsDialog";
@@ -345,8 +346,17 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         update={update}
         onInstallUpdate={() =>
           run(async () => {
-            const name = await api.installUpdate();
-            setNotice(t("update.done", { name }));
+            const outcome = await api.installUpdate();
+            // The browser opening on the release page is its own report; the
+            // rest earn a line, cancelling included — a button that answers
+            // silence reads as a broken one.
+            if (outcome.kind === "installed") {
+              setNotice(t("update.installed", { version: outcome.version ?? "" }));
+            } else if (outcome.kind === "cancelled") {
+              setNotice(t("update.cancelled"));
+            } else if (outcome.kind === "downloaded") {
+              setNotice(t("update.done", { name: outcome.name ?? "" }));
+            }
           })
         }
         onLanguageChange={(tag) => {

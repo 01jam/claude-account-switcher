@@ -144,6 +144,13 @@ function UpdateSetting({
   // only shipped .deb, say. There is still an update, it is just a manual one,
   // so the button changes its mind about what it does rather than lying.
   const manual = !available.assetName;
+  // And a package this machine has no package manager for — a .dmg — is
+  // downloaded and shown, not installed. Three states, three sentences.
+  const hint = manual
+    ? "update.open_page_hint"
+    : available.installs
+      ? "update.install_hint"
+      : "update.handoff_hint";
 
   return (
     <div className="setting setting-update">
@@ -155,9 +162,7 @@ function UpdateSetting({
             current: update.current,
           })}
         </p>
-        <p className="muted">
-          {manual ? t("update.open_page_hint") : t("update.install_hint")}
-        </p>
+        <p className="muted">{t(hint)}</p>
       </div>
       <div className="setting-update-actions">
         <Button
@@ -166,7 +171,7 @@ function UpdateSetting({
           onPress={onInstall}
         >
           {busy
-            ? t("update.working")
+            ? t(available.installs ? "update.working_install" : "update.working")
             : manual
               ? t("update.open_page")
               : t("update.install")}

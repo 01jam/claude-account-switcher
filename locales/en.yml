@@ -113,11 +113,15 @@ update:
   available: "Version {version} is available. You are on {current}."
   notes: Release notes
   install: Download and install
-  install_hint: Downloads the package and opens it with the system installer, which asks for your password. Nothing is installed behind your back.
+  install_hint: Downloads the package and installs it with the system package manager. The password prompt in the middle is the system's own — this app never sees it.
+  handoff_hint: "Downloads the package and shows it to you: on this system putting it in place is a step you take yourself."
   open_page: Open the release page
   open_page_hint: This release carries no package in the format this copy was installed from, so the download is a manual one.
   working: Downloading…
-  done: "{name} downloaded — the system installer takes it from here."
+  working_install: Downloading and installing…
+  done: "{name} downloaded — putting it in place is yours to do."
+  installed: "Version {version} installed. Quit from the tray menu and start it again to run it."
+  cancelled: Installation cancelled — nothing was changed.
 
 errors:
   no_login: no login found — run `claude` and sign in before saving
@@ -131,5 +135,7 @@ errors:
   login_busy: Claude Code is writing its login right now
   invalid_token: invalid or expired token
   api_status: the API answered {status}
+  download_truncated: the download did not arrive whole — nothing was installed
+  install_failed: "the package manager exited with {status}"
   no_update: no newer version to install
   no_opener: "cannot hand the file to the desktop: {error}"

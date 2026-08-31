@@ -60,7 +60,26 @@ fn is_warning(profile: &Profile, usage: Option<&Usage>) -> bool {
         .is_some()
 }
 
-/// `Nome · 5h 92% · 7g 45%`, with the account's email when it adds something.
+/// How old the numbers are, when that is old enough to matter. The menu shows
+/// whatever the cache holds — it is rebuilt synchronously and cannot wait on the
+/// network — so without this a reading frozen by a rate-limit cooldown looks
+/// exactly like one taken a second ago. Same wording the cards use.
+fn stale_note(usage: &Usage) -> Option<String> {
+    if !usage.is_stale() {
+        return None;
+    }
+    // Rounded rather than truncated, so this and the card never disagree by a
+    // minute over the same reading.
+    let minutes = (usage.age_ms() + 30_000) / 60_000;
+    Some(if minutes < 60 {
+        i18n::t_args("usage.stale_minutes", &[("minutes", &minutes.to_string())])
+    } else {
+        i18n::t_args("usage.stale_hours", &[("hours", &(minutes / 60).to_string())])
+    })
+}
+
+/// `Nome · 5h 92% · 7g 45%`, with the account's email when it adds something,
+/// and the age of the numbers when they are no longer fresh.
 fn label_for(profile: &Profile, usage: Option<&Usage>) -> String {
     let mut parts = vec![match &profile.email {
         Some(email) if email != &profile.label => {
@@ -83,6 +102,9 @@ fn label_for(profile: &Profile, usage: Option<&Usage>) -> String {
                 i18n::t("usage.seven_day_short"),
                 w.utilization
             ));
+        }
+        if let Some(note) = stale_note(u) {
+            parts.push(note);
         }
     }
 

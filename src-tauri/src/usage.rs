@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use crate::i18n;
 use crate::oauth;
+use crate::pace;
 use crate::store;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -25,11 +26,17 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// it, in percentage points.
 pub const WARN_MARGIN: f64 = 5.0;
 
-/// How long a fetched snapshot is served from cache. Short, because the polling
-/// task is what refreshes it and forces past it anyway: all this has to do is
-/// stop one round of window activity — several cards, a tray rebuild, a switch —
-/// from becoming a request each.
-const CACHE_TTL_MS: u64 = 60_000;
+/// How long a fetched snapshot is served from cache.
+///
+/// Just under the cadence floor, and that shortfall is deliberate. The budget
+/// is spent by whoever asks, so a window opening, a tray rebuild and a switch
+/// inside one interval have to cost one request between them rather than three
+/// — that is what the TTL is for. But matching the floor exactly is the bug
+/// this app already shipped once: a scheduled fetch landing a moment before an
+/// entry ages out is handed the old copy, timestamp and all, and the account
+/// waits another full interval. Half a minute of clearance and a due account is
+/// always past it. See `pace` for where the floor comes from.
+const CACHE_TTL_MS: u64 = pace::MIN_INTERVAL.as_millis() as u64 - 30_000;
 
 /// How old a reading has to be before the card admits to it. Several polls'
 /// worth, deliberately: the caption is for numbers the endpoint would not give
@@ -85,6 +92,18 @@ impl Usage {
         store::now_ms().saturating_sub(self.fetched_at) <= DECISION_MAX_AGE_MS
     }
 
+    /// Old enough that showing the number bare would be a small lie. One
+    /// definition, used by the cards and the tray menu alike: a percentage
+    /// that says nothing about its own age in one place and admits to it in
+    /// the other is how someone ends up trusting the wrong one.
+    pub fn is_stale(&self) -> bool {
+        self.age_ms() >= STALE_AFTER_MS
+    }
+
+    pub fn age_ms(&self) -> u64 {
+        store::now_ms().saturating_sub(self.fetched_at)
+    }
+
     /// The worst of the two windows against the given thresholds, if either has
     /// data. `None` means "nothing to judge on".
     pub fn hits(&self, five_hour_threshold: f64, seven_day_threshold: f64) -> Option<Hit> {
@@ -103,6 +122,23 @@ impl Usage {
                 })
             })
             .next()
+    }
+
+    /// The window nearest its own threshold — the one that decides when this
+    /// account is done, and so the one the cadence watches for movement.
+    /// Returns what it reads and the threshold it is measured against.
+    pub fn binding(&self, five_hour: f64, seven_day: f64) -> Option<(f64, f64)> {
+        [
+            (self.five_hour.as_ref(), five_hour),
+            (self.seven_day.as_ref(), seven_day),
+        ]
+        .into_iter()
+        .filter_map(|(window, threshold)| Some((window?.utilization, threshold)))
+        .max_by(|a, b| {
+            (a.0 - a.1)
+                .partial_cmp(&(b.0 - b.1))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// Like `hits`, but fires `margin` points early — "about to run out" rather
@@ -297,6 +333,23 @@ pub struct Cache {
     cooldowns: Mutex<HashMap<String, u64>>,
     /// When an explicit Refresh last pushed through a cooldown.
     last_override: Mutex<u64>,
+    /// When each account is next due, and what the last plan decided. Persisted
+    /// so that a restart does not put every account back in the queue at once —
+    /// which is a burst, and a burst is what saturates the trailing hour.
+    schedules: Mutex<HashMap<String, Schedule>>,
+}
+
+/// One account's place in the queue, as `pace` last worked it out.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Schedule {
+    pub next_at: u64,
+    pub interval_s: u64,
+    /// What the binding window read last time, for spotting movement.
+    pub binding: Option<f64>,
+    /// When this account was last refused, remembered past the cooldown itself
+    /// because the hour it takes to age out is longer than the cooldown is.
+    pub last_refusal: Option<u64>,
 }
 
 /// The cache as it is written to disk.
@@ -308,6 +361,8 @@ struct Persisted {
     cooldowns: HashMap<String, u64>,
     #[serde(default)]
     last_override: u64,
+    #[serde(default)]
+    schedules: HashMap<String, Schedule>,
 }
 
 fn cache_path() -> Option<PathBuf> {
@@ -340,16 +395,18 @@ impl Cache {
             // is the right answer for a deadline nobody can attribute any more.
             cooldowns: Mutex::new(saved.cooldowns),
             last_override: Mutex::new(saved.last_override),
+            schedules: Mutex::new(saved.schedules),
         }
     }
 
     /// Best effort: a snapshot that fails to save costs a refetch, nothing more.
     fn save(&self) {
-        let (Some(path), Ok(entries), Ok(mut cooldowns), Ok(last_override)) = (
+        let (Some(path), Ok(entries), Ok(mut cooldowns), Ok(last_override), Ok(schedules)) = (
             self.path.clone(),
             self.entries.lock(),
             self.cooldowns.lock(),
             self.last_override.lock(),
+            self.schedules.lock(),
         ) else {
             return;
         };
@@ -361,6 +418,7 @@ impl Cache {
             entries: entries.clone(),
             cooldowns: cooldowns.clone(),
             last_override: *last_override,
+            schedules: schedules.clone(),
         };
         if let Ok(json) = serde_json::to_vec_pretty(&saved) {
             let _ = std::fs::write(path, json);
@@ -457,6 +515,17 @@ impl Cache {
         }
         if let Ok(mut map) = self.cooldowns.lock() {
             map.remove(id);
+        }
+        self.save();
+    }
+
+    fn schedule(&self, id: &str) -> Option<Schedule> {
+        self.schedules.lock().ok()?.get(id).cloned()
+    }
+
+    fn set_schedule(&self, id: &str, plan: Schedule) {
+        if let Ok(mut schedules) = self.schedules.lock() {
+            schedules.insert(id.to_string(), plan);
         }
         self.save();
     }
@@ -657,6 +726,20 @@ mod tests {
         assert_eq!(usage.five_hour.as_ref().unwrap().utilization, 3.0);
     }
 
+    /// The bar the cards and the tray menu share. It sits well below the one
+    /// the auto-switch uses, which is the point: a number worth captioning as
+    /// old is still a number worth deciding on.
+    #[test]
+    fn a_reading_admits_its_age_only_past_the_stale_mark() {
+        let mut usage = parse(SAMPLE);
+        usage.fetched_at = store::now_ms();
+        assert!(!usage.is_stale());
+
+        usage.fetched_at = store::now_ms() - STALE_AFTER_MS - 1;
+        assert!(usage.is_stale());
+        assert!(usage.is_actionable(), "and still good enough to act on");
+    }
+
     /// The endpoint's blanket hour is not a deadline it keeps to, and sitting
     /// blind for it costs more than the one request finding out costs.
     #[test]
@@ -731,34 +814,128 @@ mod tests {
     }
 }
 
+/// One round of the polling task: ask about the accounts that are due, and
+/// work out when each should next be asked about.
+///
+/// The cadence is per account rather than per round because the budget is per
+/// account: see `pace` for the measurements the intervals come from. Everything
+/// not due reports what is held, and how old that is travels with it.
+pub async fn poll_due(cache: &Cache) -> Result<Vec<ProfileUsage>> {
+    let profiles = store::list()?;
+    let active = store::active().unwrap_or_default();
+    let now = store::now_ms();
+    let mut out = Vec::with_capacity(profiles.len());
+
+    for profile in profiles {
+        let id = profile.id.clone();
+        let previous = cache.schedule(&id);
+        let due = previous.as_ref().is_none_or(|plan| now >= plan.next_at);
+
+        // Not forced: the TTL sits half a minute under the floor, so anything
+        // genuinely due is past it, while a reading the window pulled seconds
+        // ago is reused instead of being bought twice. At startup that is the
+        // difference between one request per account and two.
+        let result = if due {
+            for_profile(cache, &id, false).await
+        } else {
+            match cache.get_any(&id) {
+                Some(held) => Ok(held),
+                // Never read at all: a meter that has never had a number in it
+                // is worse than one request off the budget.
+                None => for_profile(cache, &id, true).await,
+            }
+        };
+
+        if due {
+            let binding = result
+                .as_ref()
+                .ok()
+                .and_then(|u| u.binding(profile.five_hour_threshold, profile.seven_day_threshold));
+            // A refusal standing right now is one that happened just now; an
+            // older one is remembered until it ages out of the trailing hour.
+            let last_refusal = if cache.retry_at(&id).is_some() {
+                Some(now)
+            } else {
+                previous.as_ref().and_then(|plan| plan.last_refusal)
+            };
+
+            let interval = pace::plan(
+                &pace::Sample {
+                    binding: binding.map(|(pct, _)| pct),
+                    previous: previous.as_ref().and_then(|plan| plan.binding),
+                    // With no reading there is no threshold to be near, and the
+                    // plan falls through to the movement rules either way.
+                    threshold: binding.map_or(100.0, |(_, threshold)| threshold),
+                    active: active.as_deref() == Some(id.as_str()),
+                    last_interval: previous
+                        .as_ref()
+                        .map(|plan| Duration::from_secs(plan.interval_s)),
+                    last_refusal,
+                },
+                now,
+            );
+
+            cache.set_schedule(
+                &id,
+                Schedule {
+                    next_at: now + interval.as_millis() as u64,
+                    interval_s: interval.as_secs(),
+                    binding: binding.map(|(pct, _)| pct),
+                    last_refusal,
+                },
+            );
+        }
+
+        out.push(entry_for(id, result, cache));
+    }
+
+    Ok(out)
+}
+
+/// Which accounts a manual round asks the endpoint about.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Refresh {
+    /// Serve what is held and ask only for what has aged past the TTL. What a
+    /// window wants when it opens: usually no requests at all.
+    Cached,
+    /// Every account, now. The user pressed Refresh, which is also the one
+    /// gesture allowed to push through a cooldown.
+    All,
+}
+
 /// Usage for every saved account, one entry each, errors included.
-pub async fn for_all(cache: &Cache, force: bool) -> Result<Vec<ProfileUsage>> {
+pub async fn for_all(cache: &Cache, refresh: Refresh) -> Result<Vec<ProfileUsage>> {
     let ids: Vec<String> = store::list()?.into_iter().map(|p| p.id).collect();
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        let result = for_profile(cache, &id, force).await;
-        // Read before the id is moved into the entry, and after the fetch: a
-        // refusal in this very round is what sets it.
-        let retry_at = cache.retry_at(&id);
-        let entry = match result {
-            Ok(usage) => ProfileUsage {
-                id,
-                // Old enough to say so: the cooldown, or an account whose
-                // numbers have not been refreshed for several rounds running.
-                stale: store::now_ms().saturating_sub(usage.fetched_at) >= STALE_AFTER_MS,
-                usage: Some(usage),
-                error: None,
-                retry_at,
-            },
-            Err(e) => ProfileUsage {
-                id,
-                usage: None,
-                error: Some(format!("{e:#}")),
-                retry_at,
-                stale: false,
-            },
-        };
-        out.push(entry);
+        let result = for_profile(cache, &id, refresh == Refresh::All).await;
+        out.push(entry_for(id, result, cache));
     }
     Ok(out)
+}
+
+/// One account's reading as the window and the tray need it, whatever it took
+/// to get — or not get — it.
+fn entry_for(id: String, result: Result<Usage>, cache: &Cache) -> ProfileUsage {
+    // Read after the fetch and before the id moves: a refusal in this very
+    // round is what sets it.
+    let retry_at = cache.retry_at(&id);
+    match result {
+        Ok(usage) => ProfileUsage {
+            id,
+            // Old enough to say so: the cooldown, or an account whose numbers
+            // have not been refreshed for several rounds running.
+            stale: usage.is_stale(),
+            usage: Some(usage),
+            error: None,
+            retry_at,
+        },
+        Err(e) => ProfileUsage {
+            id,
+            usage: None,
+            error: Some(format!("{e:#}")),
+            retry_at,
+            stale: false,
+        },
+    }
 }

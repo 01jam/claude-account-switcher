@@ -2,6 +2,7 @@ mod actions;
 mod claude;
 mod i18n;
 mod oauth;
+mod pace;
 mod store;
 mod tray;
 mod update;
@@ -15,15 +16,13 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use usage::{Cache, ProfileUsage};
 
-/// How often usage is refreshed and the auto-switch re-checked.
+/// How often the polling task wakes up — not how often anything is fetched.
 ///
-/// The poll forces past the cache TTL rather than matching it. Matching it left
-/// the real cadence to chance: a refresh landing a moment before an entry aged
-/// out was handed the old copy, timestamp and all, and the next true fetch was
-/// a whole interval further on — meters that sat still for twice as long as
-/// anyone reading this constant would expect. Forcing makes it exactly one
-/// request per account per interval, which is the rate the 429 cooldown is
-/// there to bound.
+/// Each account carries its own due time, worked out by `pace` from what the
+/// endpoint's budget was measured to be; this is only the granularity that
+/// scheduler runs at. A minute is fine for it because a minute is the tightest
+/// interval `pace` will ever hand out, and a wake-up that finds nothing due
+/// costs a lock and a comparison.
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// How often the token keeper looks at the expiry dates.
@@ -225,7 +224,15 @@ async fn fetch_usage(
     cache: State<'_, Cache>,
     force: bool,
 ) -> Result<Vec<ProfileUsage>, String> {
-    let result = usage::for_all(&cache, force).await;
+    let result = usage::for_all(
+        &cache,
+        if force {
+            usage::Refresh::All
+        } else {
+            usage::Refresh::Cached
+        },
+    )
+    .await;
     // Fresh numbers reach the tray labels and the warning badge too.
     refresh_tray(&app);
     // And they are the same numbers the auto-switch judges on: deciding here as
@@ -434,13 +441,9 @@ async fn evaluate_auto_switch(app: &AppHandle, cache: &Cache) {
 /// warning badge are worth keeping current on their own.
 async fn poll_usage(app: AppHandle) {
     tokio::time::sleep(STARTUP_DELAY).await;
-    // The first pass rides on what the window fetched as it opened; every later
-    // one is itself the refresh, and forces.
-    let mut force = false;
-
     loop {
         let cache = app.state::<Cache>();
-        match usage::for_all(&cache, force).await {
+        match usage::poll_due(&cache).await {
             // Pushed to the window rather than left for it to come and find.
             // Its own timer would be the webview's, and the webview spends most
             // of this app's life hidden in the tray, where timers are throttled
@@ -454,7 +457,6 @@ async fn poll_usage(app: AppHandle) {
         evaluate_auto_switch(&app, &cache).await;
         drop(cache);
 
-        force = true;
         tokio::time::sleep(POLL_INTERVAL).await;
     }
 }

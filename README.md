@@ -59,13 +59,53 @@ Usage for accounts that are **not** active is read with the stored token — and
 the app keeps that token alive itself, so the meters no longer go blank on an
 account nobody has run `claude` under lately. See below.
 
-The endpoint rate-limits, so the request rate is fixed rather than left to
-chance: the periodic check runs every minute and forces past the cache, making
-it exactly one request per account per minute. The cache — a reading stays valid
-for a minute — is there for everything else, so that a window being used, a tray
-rebuild or a switch adds no requests of its own. After a `429` that account is
-left alone for a while and keeps showing its last known numbers rather than
-emptying its meters.
+### Asking without being refused
+
+The endpoint publishes no budget, and this app spent a version finding its edge
+the hard way: polling every account once a minute — sixty requests an hour each
+— earned exactly the refusals that rate predicts.
+
+The constants it now paces itself by are not ours. They come from the
+measurements written down in `poll_policy.py` of
+[realiti4/claude-swap](https://github.com/realiti4/claude-swap), which probed the
+endpoint deliberately and recorded the method and the dates. What that work
+found: roughly **28-30 requests an hour per identity**, over a **trailing
+60-minute window** rather than a bucket that refills — so a burst saturates for
+up to a full hour, and pausing does not hand the headroom back early. The
+identity is the account (or, under another refusal regime, the token); planning
+for the account is the conservative reading and the one taken here.
+
+So each account carries its own schedule, in `pace.rs`:
+
+| when | how often |
+|---|---|
+| floor, and the cache's serve-fresh window | **3 min** — about 20 requests an hour against a cap near 30 |
+| active account, idle | decays to **5 min** |
+| another saved account, idle | decays to **10 min** |
+| spent account | **10 min** — slow, but never abandoned: a grant can free it early |
+| active, within 15 points of its threshold **and** moving | **1 min** |
+| after a refusal | **6 min** floor for the hour it takes to age out, backing off ×1.5 toward **30 min** while they recur |
+
+The minute is the case the whole thing exists for, and it is bounded by
+construction rather than by a timer: either the threshold is crossed and the
+auto-switch moves away, or the movement stops and the next plan decays back to
+the floor. Movement is a point of change on the window nearest its threshold, so
+consumption on another machine tightens the cadence here too.
+
+The backoff is multiplicative because the budget is shared with every other
+machine watching the same account, none of them can see the others, and the
+endpoint reports no remaining count — the same bargain TCP makes, for the same
+reason. Each interval carries ±10% of jitter so two processes drift apart
+instead of arriving together.
+
+Those numbers can age: the endpoint is undocumented and Anthropic can retune it
+any day. What would mean this needs revisiting is refusals appearing at these
+rates.
+
+The schedule is persisted with the cache, so a restart does not put every
+account back in the queue at once — which is a burst, and a burst is the thing
+that saturates the hour. After a `429` that account is left alone and keeps
+showing its last known numbers rather than emptying its meters.
 
 That check is also what the open window listens to: each round's numbers are
 pushed to it rather than left for it to come and fetch. A timer in the window
@@ -101,9 +141,10 @@ requests. Someone looking at four-hour-old numbers knows something a blanket
 the press is too soon, the notice says when the next attempt is due rather than
 leaving the unchanged numbers to speak for themselves.
 
-Once a reading is more than five minutes old — several rounds missed, which in
-practice means a cooldown — cards carry its age ("numbers from 3h ago") and when
-the app will ask again. Kept numbers that look freshly
+Once a reading is more than five minutes old, cards carry its age ("numbers from
+3h ago") and when the app will ask again — and so does the tray menu, which is
+where a frozen number is easiest to mistake for a live one, since the menu is
+rebuilt synchronously and can only ever show what the cache already holds. Kept numbers that look freshly
 loaded are how a spent account appears to have room left.
 
 The auto-switch will not act on a reading older than 15 minutes. Showing an old

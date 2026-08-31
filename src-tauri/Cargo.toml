@@ -1,6 +1,6 @@
 [package]
 name = "claude-switch"
-version = "0.2.4"
+version = "0.2.5"
 description = "Switch between multiple Claude Code accounts"
 authors = ["Hund Studio"]
 edition = "2021"

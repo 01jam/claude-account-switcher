@@ -11,6 +11,7 @@ app:
   save: Save
   delete: Delete
   ok: Ok
+  dismiss: Dismiss
 
 window:
   minimize: Minimise
@@ -70,6 +71,8 @@ accounts:
   delete_title: Delete “{name}”?
   delete_body: The credentials saved for this account will be removed. You will have to sign in again to add it back.
   token_expired: token expired
+  token_failed: Token renewal failed
+  token_retry: Press to try again.
   used_today: used today
   used_yesterday: yesterday
   used_days_ago: "{days} days ago"

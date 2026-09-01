@@ -19,6 +19,7 @@ app:
   save: Salva
   delete: Elimina
   ok: Ok
+  dismiss: Chiudi
 
 window:
   minimize: Riduci a icona
@@ -78,6 +79,8 @@ accounts:
   delete_title: Eliminare «{name}»?
   delete_body: Le credenziali salvate per questo account verranno rimosse. Dovrai rifare il login per riaggiungerlo.
   token_expired: token scaduto
+  token_failed: Rinnovo del token fallito
+  token_retry: Premi per riprovare.
   used_today: usato oggi
   used_yesterday: ieri
   used_days_ago: "{days} giorni fa"

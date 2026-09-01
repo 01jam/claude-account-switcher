@@ -95,6 +95,18 @@ export type UpdateStatus = {
   available: UpdateAvailable | null;
 };
 
+/** How loudly the window draws a notice. */
+export type NoticeLevel = "info" | "error";
+
+/** Something the app has to say that nobody asked for. The text arrives already
+ *  written: the backend renders it, because when the window is down the same
+ *  sentence goes to the desktop's notification service instead, and one
+ *  rendering path is what keeps the two from disagreeing. */
+export type Notice = {
+  text: string;
+  level: NoticeLevel;
+};
+
 export type AutoSwitched = {
   from: string;
   to: string;
@@ -164,6 +176,12 @@ export const api = {
   /** Answered once per launch: the window also listens for the event, since
    *  the choice is usually made before the webview is up to hear it. */
   startupPick: () => invoke<StartupPick | null>("startup_pick"),
+  /** Whatever was raised while there was nowhere to show it — handed over once,
+   *  so a window coming up hours later still hears about the night. */
+  pendingNotices: () => invoke<Notice[]>("pending_notices"),
+  /** Which accounts cannot renew their token, keyed by id, with the reason.
+   *  Pushed as `token-errors` from then on. */
+  tokenErrors: () => invoke<Record<string, string>>("token_errors"),
   setAutostart: (enabled: boolean) =>
     invoke<void>("set_autostart", { enabled }),
   /** `null` hands the choice back to the system locale. */

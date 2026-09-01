@@ -57,6 +57,7 @@ code {
 /* The window itself never scrolls: only the account list does, so the header
    and the footer actions stay put. */
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -284,6 +285,92 @@ code {
   word-break: break-word;
 }
 
+/* Toasts ------------------------------------------------------------------ */
+
+/* Over the list rather than in the flow. Almost everything these say happened
+   while the window was in the tray, and a strip that pushes the accounts down
+   whenever the app has something to report moves the cards out from under the
+   pointer. Bottom-anchored because that is where a message the user did not ask
+   for belongs: reading it is optional, and the header is not. */
+.toasts {
+  position: absolute;
+  z-index: 8;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* A frame, not a target: the footer keeps working in the gaps between them. */
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  pointer-events: auto;
+  animation: toast-in 160ms ease-out;
+}
+
+.toast-error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.toast-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.toast-text {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toast-close {
+  display: flex;
+  flex: none;
+  padding: 3px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+  outline: none;
+}
+
+.toast-close[data-hovered] {
+  background: color-mix(in srgb, currentcolor 12%, transparent);
+  opacity: 1;
+}
+
+.toast-close[data-focus-visible] {
+  outline: 2px solid currentcolor;
+  outline-offset: 1px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
 /* Auto-switch status banner ----------------------------------------------- */
 
 /* Always present, so its state is readable at a glance rather than something
@@ -482,6 +569,30 @@ code {
 
 .account-grip[data-focus-visible] {
   outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The one thing on a card that is wrong rather than merely worth knowing: this
+   account cannot renew its token, and until it can its meters go blank. The
+   toast that announced it is long gone, so the mark stays. */
+.account-alert {
+  display: flex;
+  flex: none;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--danger);
+  cursor: pointer;
+  outline: none;
+}
+
+.account-alert[data-hovered] {
+  background: var(--danger-soft);
+}
+
+.account-alert[data-focus-visible] {
+  outline: 2px solid var(--danger);
   outline-offset: 1px;
 }
 
@@ -860,6 +971,31 @@ code {
 
 .menu-item-danger {
   color: var(--danger);
+}
+
+/* Portalled like the popover, and above it: a tooltip has nothing to lose to. */
+.tooltip {
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tooltip[data-entering] {
+  animation: fade 120ms ease-out;
+}
+
+.tooltip-hint {
+  color: var(--muted);
 }
 
 /* Above the list fades: those are positioned with a z-index of their own, and a

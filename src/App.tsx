@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Button,
@@ -9,7 +9,6 @@ import {
   ModalOverlay,
 } from "react-aria-components";
 import {
-  IconAlertTriangle,
   IconArrowsExchange,
   IconDeviceFloppy,
   IconLogout,
@@ -21,14 +20,14 @@ import {
 
 import {
   api,
-  type AutoSwitched,
   type CurrentAccount,
+  type Notice,
+  type NoticeLevel,
   type Profile,
   type ProfileUsage,
   type Settings,
   type StartupPick,
   type ToggleKey,
-  type TokenOutcome,
   type RefreshReport,
   type UpdateAvailable,
   type UpdateStatus,
@@ -37,6 +36,7 @@ import {
 import AccountList from "./components/AccountList";
 import ResizeGrip from "./components/ResizeGrip";
 import SettingsDialog from "./components/SettingsDialog";
+import Toasts, { type Toast } from "./components/Toasts";
 import WindowControls from "./components/WindowControls";
 import { useWindowDrag } from "./useWindowDrag";
 import {
@@ -47,6 +47,10 @@ import {
   type Lang,
   type Translate,
 } from "./i18n";
+
+/** How many toasts may stand at once. Past this the window is a noticeboard,
+ *  and the oldest is the one nobody is still reading. */
+const MAX_TOASTS = 3;
 
 /** Which call each switch in the settings dialog stands for. */
 const SETTERS: Record<ToggleKey, (enabled: boolean) => Promise<void>> = {
@@ -79,9 +83,23 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [tokenErrors, setTokenErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  // Ids come from here rather than from the text: the same sentence can land
+  // twice, both times for real, and a key that collided would drop one of them.
+  const nextToastId = useRef(0);
+
+  const say = useCallback((text: string, level: NoticeLevel = "info") => {
+    setToasts((current) =>
+      [...current, { id: nextToastId.current++, text, level }].slice(-MAX_TOASTS),
+    );
+  }, []);
+
+  const dismiss = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
 
   const reload = useCallback(async () => {
     try {
@@ -95,9 +113,9 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       setSettings(config);
       onLanguage(config.resolvedLanguage);
     } catch (e) {
-      setError(String(e));
+      say(String(e), "error");
     }
-  }, [onLanguage]);
+  }, [onLanguage, say]);
 
   // Usage is a network round-trip per account, so it loads on its own and never
   // blocks the list from rendering.
@@ -106,13 +124,28 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       const entries = await api.fetchUsage(force);
       setUsage(Object.fromEntries(entries.map((e) => [e.id, e])));
     } catch (e) {
-      setError(String(e));
+      say(String(e), "error");
     }
-  }, []);
+  }, [say]);
+
+  // What was raised while there was nowhere to show it, plus the failures that
+  // predate this window. The queue is usually empty: it only keeps a message the
+  // desktop had nowhere to put.
+  const catchUp = useCallback(() => {
+    api
+      .pendingNotices()
+      .then((held) => held.forEach((n) => say(n.text, n.level)))
+      .catch(() => {});
+    api
+      .tokenErrors()
+      .then(setTokenErrors)
+      .catch(() => {});
+  }, [say]);
 
   useEffect(() => {
     reload();
     loadUsage();
+    catchUp();
     // The check runs on the Rust side from launch, so by the time a window
     // opens the answer is usually already sitting there. Merged rather than
     // assigned: the first check fires at launch too, and an event that beat
@@ -127,32 +160,33 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       )
       .catch(() => {});
     const unlistenChanged = listen("profiles-changed", reload);
-    const unlistenSwitched = listen<AutoSwitched>("auto-switched", (e) => {
-      setNotice(t("autoswitch.switched", e.payload));
+    // Data, not words: the sentence about the switch is written on the Rust
+    // side, because when the window is down it goes to the desktop instead.
+    const unlistenSwitched = listen("auto-switched", () => {
       reload();
       loadUsage(true);
     });
-    const unlistenExhausted = listen<string>("auto-switch-exhausted", (e) => {
-      setNotice(t("autoswitch.exhausted", { reason: e.payload }));
+    const unlistenNotice = listen<Notice>("notice", (e) => {
+      say(e.payload.text, e.payload.level);
     });
-    const unlistenToken = listen<TokenOutcome>("token-refresh-failed", (e) => {
-      setError(
-        t("tokens.failed", {
-          name: e.payload.label,
-          error: e.payload.error ?? "",
-        }),
-      );
+    // A failure repeats every twenty seconds until it stops; the toast comes
+    // once and this is what keeps saying it, on the card of the account it is
+    // about.
+    const unlistenTokens = listen<Record<string, string>>("token-errors", (e) => {
+      setTokenErrors(e.payload);
     });
 
     // The account the app opened on. The choice is usually made before this
     // listener exists — and with the window left in the tray, hours before one
-    // does — so it is both pushed and, once, asked for.
+    // does — so it is both pushed and, once, asked for. Window-only on purpose:
+    // a desktop notification at every login would be something to dismiss
+    // rather than something to read.
     const unlistenPicked = listen<StartupPick>("startup-picked", (e) => {
-      setNotice(startupNotice(t, e.payload));
+      say(startupNotice(t, e.payload));
     });
     api
       .startupPick()
-      .then((picked) => picked && setNotice(startupNotice(t, picked)))
+      .then((picked) => picked && say(startupNotice(t, picked)))
       .catch(() => {});
 
     const unlistenUpdate = listen<UpdateAvailable>("update-available", (e) => {
@@ -178,6 +212,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       if (document.visibilityState !== "visible") return;
       reload();
       loadUsage();
+      catchUp();
     };
     window.addEventListener("focus", onWake);
     document.addEventListener("visibilitychange", onWake);
@@ -185,30 +220,29 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
     return () => {
       unlistenChanged.then((f) => f());
       unlistenSwitched.then((f) => f());
-      unlistenExhausted.then((f) => f());
-      unlistenToken.then((f) => f());
+      unlistenNotice.then((f) => f());
+      unlistenTokens.then((f) => f());
       unlistenUsage.then((f) => f());
       unlistenPicked.then((f) => f());
       unlistenUpdate.then((f) => f());
       window.removeEventListener("focus", onWake);
       document.removeEventListener("visibilitychange", onWake);
     };
-  }, [reload, loadUsage, t]);
+  }, [reload, loadUsage, catchUp, say, t]);
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
       setBusy(true);
-      setError(null);
       try {
         await fn();
       } catch (e) {
-        setError(String(e));
+        say(String(e), "error");
       } finally {
         setBusy(false);
         await reload();
       }
     },
-    [reload],
+    [reload, say],
   );
 
   return (
@@ -249,7 +283,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
                 // Renewing first is what makes the numbers reachable at all for
                 // an account whose token has expired — and pressing this button
                 // has to visibly do something either way.
-                setNotice(refreshNotice(t, lang, await api.refreshTokens()));
+                say(refreshNotice(t, lang, await api.refreshTokens()));
                 await loadUsage(true);
               })
             }
@@ -269,22 +303,6 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         </span>
         <IconSettings size={15} className="auto-banner-cog" />
       </Button>
-
-      {error && (
-        <div className="banner banner-error" role="alert">
-          <IconAlertTriangle size={18} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {notice && (
-        <div className="banner banner-info" role="status">
-          <span>{notice}</span>
-          <Button className="btn btn-ghost btn-sm" onPress={() => setNotice(null)}>
-            {t("app.ok")}
-          </Button>
-        </div>
-      )}
 
       {current?.unsaved && (
         <div className="banner banner-info">
@@ -311,6 +329,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         <AccountList
           profiles={profiles}
           usage={usage}
+          tokenErrors={tokenErrors}
           busy={busy}
           autoSwitch={settings?.autoSwitch ?? false}
           onSwitch={(id) => run(() => api.switchProfile(id))}
@@ -348,6 +367,8 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         )}
       </footer>
 
+      <Toasts toasts={toasts} onDismiss={dismiss} />
+
       <SettingsDialog
         isOpen={showSettings}
         settings={settings}
@@ -366,11 +387,11 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
             // rest earn a line, cancelling included — a button that answers
             // silence reads as a broken one.
             if (outcome.kind === "installed") {
-              setNotice(t("update.installed", { version: outcome.version ?? "" }));
+              say(t("update.installed", { version: outcome.version ?? "" }));
             } else if (outcome.kind === "cancelled") {
-              setNotice(t("update.cancelled"));
+              say(t("update.cancelled"));
             } else if (outcome.kind === "downloaded") {
-              setNotice(t("update.done", { name: outcome.name ?? "" }));
+              say(t("update.done", { name: outcome.name ?? "" }));
             }
           })
         }

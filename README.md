@@ -83,6 +83,28 @@ account already in place), a login the app has never saved is left alone until
 you save it, and being on the freest account already means nothing happens.
 When it does move, the window says which account it landed on and why.
 
+### Where the app says it
+
+The window spends its life in the tray, so a strip inside it is the wrong place
+for something that happens at three in the afternoon and gets read at six. The
+app decides per message, and never sends the same one twice:
+
+- **window open and in front** — a toast over the account list, gone in a few
+  seconds and dismissible with a click;
+- **anywhere else** — a **desktop notification**, through whatever the system
+  runs. That covers the auto-switch, the "nothing left to switch to" case and a
+  token that will not renew: everything that happens on its own.
+
+A launch landing on the freest account is the exception, and stays inside the
+window: a notification at every login would be something to dismiss rather than
+something to read. So is anything answering a button you just pressed — Refresh,
+or an update install — which belongs where your finger is.
+
+A desktop with nowhere to put a notification (a Linux session running no
+notification daemon, a macOS install where the app was refused the permission)
+fails quietly and tells nobody, so the message is kept instead and shown as a
+toast the next time the window comes up.
+
 ### Asking without being refused
 
 The endpoint publishes no budget, and this app spent a version finding its edge
@@ -221,7 +243,10 @@ renewing and Refresh all do that on their own — this is the button for when yo
 signed in outside the app and want the copy brought up to date this second.
 
 A refresh token that has been revoked or already spent cannot be renewed by
-anyone — the app says so once, and that account needs a fresh `claude` login.
+anyone. The app says so once — the same failure comes back every 20 seconds and
+is not news each time — and leaves a red mark on that account's card for as long
+as it lasts, carrying the reason in its tooltip; pressing it tries again. That
+account needs a fresh `claude` login.
 
 ### Finding a new version
 

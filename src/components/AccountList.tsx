@@ -14,6 +14,8 @@ import {
   ModalOverlay,
   Popover,
   TextField,
+  Tooltip,
+  TooltipTrigger,
   useDragAndDrop,
 } from "react-aria-components";
 import {
@@ -36,6 +38,9 @@ import UsageMeter from "./UsageMeter";
 type Props = {
   profiles: Profile[];
   usage: Record<string, ProfileUsage>;
+  /** Accounts whose token renewal is failing, keyed by id, with the reason. A
+   *  toast said it once; this is what keeps saying it. */
+  tokenErrors: Record<string, string>;
   busy: boolean;
   /** Off means the thresholds are set but nothing acts on them. */
   autoSwitch: boolean;
@@ -51,6 +56,7 @@ type Props = {
 export default function AccountList({
   profiles,
   usage,
+  tokenErrors,
   busy,
   autoSwitch,
   onSwitch,
@@ -103,6 +109,7 @@ export default function AccountList({
       >
         {(profile) => {
           const entry = usage[profile.id];
+          const tokenError = tokenErrors[profile.id];
           const [fh, sd] = preview[profile.id] ?? [
             profile.fiveHourThreshold,
             profile.sevenDayThreshold,
@@ -146,6 +153,26 @@ export default function AccountList({
                       .join(" · ")}
                   </span>
                 </span>
+
+                {tokenError && (
+                  // A button rather than a bare glyph: the tooltip needs a
+                  // focusable trigger to reach a keyboard at all, and the one
+                  // thing worth doing about a failed renewal is another one.
+                  <TooltipTrigger delay={200}>
+                    <Button
+                      className="account-alert"
+                      aria-label={`${t("accounts.token_failed")} — ${tokenError}`}
+                      onPress={() => onRefreshToken(profile.id)}
+                    >
+                      <IconAlertTriangle size={18} />
+                    </Button>
+                    <Tooltip className="tooltip" placement="bottom end" offset={6}>
+                      <strong>{t("accounts.token_failed")}</strong>
+                      <span>{tokenError}</span>
+                      <span className="tooltip-hint">{t("accounts.token_retry")}</span>
+                    </Tooltip>
+                  </TooltipTrigger>
+                )}
 
                 <MenuTrigger>
                   <Button

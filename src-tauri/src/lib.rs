@@ -1,6 +1,7 @@
 mod actions;
 mod claude;
 mod i18n;
+mod notice;
 mod oauth;
 mod pace;
 mod store;
@@ -10,6 +11,7 @@ mod usage;
 
 use actions::{AutoSwitch, CurrentAccount};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::time::Duration;
 use store::Profile;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
@@ -278,6 +280,10 @@ async fn refresh_tokens(app: AppHandle, cache: State<'_, Cache>) -> Result<Refre
         cache.override_cooldowns()
     };
 
+    // The same pass the keeper runs, so the marks on the cards move with it —
+    // silently: what this press came to is the window's own to report.
+    record_failures(&app, &tokens);
+
     notify_changed(&app);
     Ok(RefreshReport {
         tokens,
@@ -297,6 +303,9 @@ async fn refresh_profile_token(
     let active = to_string_err(store::active())?;
     let result = to_string_err(oauth::renew(&id, active.as_deref(), oauth::FORCE).await);
     cache.clear_cooldown(&id);
+    if result.is_ok() {
+        clear_token_error(&app, &id);
+    }
     notify_changed(&app);
     result.map(|_| ())
 }
@@ -435,6 +444,19 @@ fn startup_pick(pick: State<'_, StartupPick>) -> Option<actions::Picked> {
     pick.take()
 }
 
+/// Whatever was raised while there was nowhere to show it — a window opening
+/// hours after the fact is the only reader those messages will get.
+#[tauri::command]
+fn pending_notices(pending: State<'_, notice::Pending>) -> Vec<notice::Notice> {
+    pending.take()
+}
+
+/// The failing accounts, for a window that opened after the failure.
+#[tauri::command]
+fn token_errors(errors: State<'_, TokenErrors>) -> HashMap<String, String> {
+    errors.snapshot()
+}
+
 #[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     let manager = app.autolaunch();
@@ -461,10 +483,24 @@ async fn evaluate_auto_switch(app: &AppHandle, cache: &Cache) {
     match actions::auto_switch(cache).await {
         Ok(AutoSwitch::Switched { from, to, reason }) => {
             notify_changed(app);
+            // Two different things: the event is data, for a window that has a
+            // list to redraw, and it is dropped when there is no window to hear
+            // it. The sentence is for the user, and goes wherever they are.
+            notice::info(
+                app,
+                i18n::t_args(
+                    "autoswitch.switched",
+                    &[("to", &to), ("from", &from), ("reason", &reason)],
+                ),
+            );
             let _ = app.emit("auto-switched", AutoSwitched { from, to, reason });
         }
+        // Nothing to redraw here — the message is the whole of it.
         Ok(AutoSwitch::Exhausted { reason }) => {
-            let _ = app.emit("auto-switch-exhausted", reason);
+            notice::info(
+                app,
+                i18n::t_args("autoswitch.exhausted", &[("reason", &reason)]),
+            );
         }
         Ok(AutoSwitch::Idle) => {}
         // A failed check is usually a network blip; the next tick retries.
@@ -544,6 +580,108 @@ async fn poll_updates(app: AppHandle) {
     }
 }
 
+/// Which saved accounts cannot renew their token, and why.
+///
+/// Not persisted: the keeper looks at every account within seconds of launch, so
+/// a failure that has stopped happening has no business outliving the process
+/// that saw it. The window reads this on its way up and is pushed every change
+/// after that.
+#[derive(Default)]
+struct TokenErrors(std::sync::Mutex<HashMap<String, String>>);
+
+/// What one renewal pass did to the map.
+#[derive(Default)]
+struct Folded {
+    /// It moved, so the window has to be told.
+    changed: bool,
+    /// The accounts that were not already failing — the only ones worth a word.
+    fresh: Vec<String>,
+}
+
+impl TokenErrors {
+    /// Fold one renewal pass in.
+    ///
+    /// A pass reports on every saved account, so an account it does not mention
+    /// has been deleted and its mark goes with it. A renewal clears the mark and
+    /// a failure sets it; a deferral — the login lock was held, and the next
+    /// pass is seconds away — leaves whatever was there, because it learned
+    /// nothing either way. Without that the mark would blink off and back on
+    /// every time Claude Code happened to be writing its own login.
+    fn fold(&self, outcomes: &[oauth::Outcome]) -> Folded {
+        let Ok(mut held) = self.0.lock() else {
+            return Folded::default();
+        };
+
+        let mut next = HashMap::new();
+        let mut fresh = Vec::new();
+        for outcome in outcomes {
+            match outcome.status {
+                oauth::Status::Failed => {
+                    if !held.contains_key(&outcome.id) {
+                        fresh.push(outcome.id.clone());
+                    }
+                    next.insert(
+                        outcome.id.clone(),
+                        outcome
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| i18n::t("errors.no_token")),
+                    );
+                }
+                oauth::Status::Deferred => {
+                    if let Some(error) = held.get(&outcome.id) {
+                        next.insert(outcome.id.clone(), error.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let changed = *held != next;
+        if changed {
+            *held = next;
+        }
+        Folded { changed, fresh }
+    }
+
+    /// One account renewed by hand, out of step with the keeper's pass.
+    fn forget(&self, id: &str) -> bool {
+        self.0
+            .lock()
+            .map(|mut held| held.remove(id).is_some())
+            .unwrap_or(false)
+    }
+
+    fn snapshot(&self) -> HashMap<String, String> {
+        self.0.lock().map(|held| held.clone()).unwrap_or_default()
+    }
+}
+
+/// Fold one renewal pass into the failure map, push it to the window when it
+/// moved, and hand back the accounts whose failure is new.
+fn record_failures<'a>(
+    app: &AppHandle,
+    outcomes: &'a [oauth::Outcome],
+) -> Vec<&'a oauth::Outcome> {
+    let errors = app.state::<TokenErrors>();
+    let folded = errors.fold(outcomes);
+    if folded.changed {
+        let _ = app.emit("token-errors", errors.snapshot());
+    }
+    outcomes
+        .iter()
+        .filter(|o| folded.fresh.contains(&o.id))
+        .collect()
+}
+
+/// Drop one account's mark and tell the window, after a renewal that worked.
+fn clear_token_error(app: &AppHandle, id: &str) {
+    let errors = app.state::<TokenErrors>();
+    if errors.forget(id) {
+        let _ = app.emit("token-errors", errors.snapshot());
+    }
+}
+
 /// Keep every saved account's token alive.
 ///
 /// Claude Code renews only the login it is running under, and only while it is
@@ -552,30 +690,28 @@ async fn poll_updates(app: AppHandle) {
 /// left choosing between accounts it cannot read. Most passes do nothing but
 /// read a handful of expiry dates.
 async fn keep_tokens_fresh(app: AppHandle) {
-    // A failure repeats every pass; the user needs to hear it once.
-    let mut reported: std::collections::HashSet<String> = std::collections::HashSet::new();
-
     loop {
         let outcomes = oauth::renew_due(oauth::LIVE_MARGIN_MS, oauth::STORED_MARGIN_MS).await;
 
-        for outcome in &outcomes {
-            match outcome.status {
-                oauth::Status::Failed => {
-                    if reported.insert(outcome.id.clone()) {
-                        eprintln!(
-                            "token renewal for {}: {}",
-                            outcome.id,
-                            outcome.error.as_deref().unwrap_or("failed")
-                        );
-                        let _ = app.emit("token-refresh-failed", outcome.clone());
-                    }
-                }
-                // Deferred says nothing yet — the next pass is seconds away.
-                oauth::Status::Deferred => {}
-                _ => {
-                    reported.remove(&outcome.id);
-                }
-            }
+        // The same failure comes back every pass, twenty seconds apart; only the
+        // ones that are new to this one are worth interrupting anyone about.
+        // The rest of the telling is the mark on the card, which stays put.
+        for outcome in record_failures(&app, &outcomes) {
+            eprintln!(
+                "token renewal for {}: {}",
+                outcome.id,
+                outcome.error.as_deref().unwrap_or("failed")
+            );
+            notice::error(
+                &app,
+                i18n::t_args(
+                    "tokens.failed",
+                    &[
+                        ("name", &outcome.label),
+                        ("error", outcome.error.as_deref().unwrap_or("")),
+                    ],
+                ),
+            );
         }
 
         // The expiry the cards show comes from the store, and a renewal moved it.
@@ -613,9 +749,14 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Rust-side only: nothing in the webview posts a notification, so the
+        // window's capabilities stay as they are.
+        .plugin(tauri_plugin_notification::init())
         .manage(Cache::load())
         .manage(update::Latest::default())
         .manage(StartupPick::default())
+        .manage(notice::Pending::default())
+        .manage(TokenErrors::default())
         .invoke_handler(tauri::generate_handler![
             list_profiles,
             current_account,
@@ -636,6 +777,8 @@ pub fn run() {
             set_start_hidden,
             set_start_on_freest,
             startup_pick,
+            pending_notices,
+            token_errors,
             set_autostart,
             set_language,
             update_status,
@@ -708,4 +851,68 @@ pub fn run() {
                 let _ = app;
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outcome(id: &str, status: oauth::Status, error: Option<&str>) -> oauth::Outcome {
+        oauth::Outcome {
+            id: id.to_string(),
+            label: id.to_string(),
+            status,
+            error: error.map(str::to_string),
+        }
+    }
+
+    /// The mark on a card is a state, and the user hears about it once. A
+    /// failure that is still failing is not news a second time.
+    #[test]
+    fn a_failure_is_new_only_once() {
+        let errors = TokenErrors::default();
+        let pass = [outcome("work", oauth::Status::Failed, Some("refused"))];
+
+        let first = errors.fold(&pass);
+        assert!(first.changed, "the first failure has to reach the window");
+        assert_eq!(first.fresh, ["work"]);
+
+        let second = errors.fold(&pass);
+        assert!(!second.changed, "the same failure moved nothing");
+        assert!(second.fresh.is_empty(), "and is not worth saying twice");
+        assert_eq!(errors.snapshot()["work"], "refused");
+    }
+
+    /// A deferral is Claude Code holding its own login lock for a moment. Left
+    /// to clear the mark it would blink off and back on — and announce itself
+    /// again on the way back.
+    #[test]
+    fn a_deferral_leaves_the_mark_alone() {
+        let errors = TokenErrors::default();
+        errors.fold(&[outcome("work", oauth::Status::Failed, Some("refused"))]);
+
+        let deferred = errors.fold(&[outcome("work", oauth::Status::Deferred, None)]);
+        assert!(!deferred.changed);
+        assert_eq!(errors.snapshot()["work"], "refused");
+
+        let renewed = errors.fold(&[outcome("work", oauth::Status::Renewed, None)]);
+        assert!(renewed.changed, "a renewal is what actually clears it");
+        assert!(errors.snapshot().is_empty());
+    }
+
+    /// `renew_due` reports on every saved account, so an account missing from a
+    /// pass is one that has been deleted.
+    #[test]
+    fn a_deleted_account_takes_its_mark_with_it() {
+        let errors = TokenErrors::default();
+        errors.fold(&[
+            outcome("work", oauth::Status::Failed, Some("refused")),
+            outcome("personal", oauth::Status::Failed, Some("refused")),
+        ]);
+
+        let after = errors.fold(&[outcome("work", oauth::Status::Failed, Some("refused"))]);
+        assert!(after.changed);
+        assert!(after.fresh.is_empty(), "work was already failing");
+        assert_eq!(errors.snapshot().keys().collect::<Vec<_>>(), ["work"]);
+    }
 }

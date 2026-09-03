@@ -167,8 +167,15 @@ pub fn rotation_after(id: &str) -> Result<Vec<Profile>> {
 
 /// Outcome of one auto-switch evaluation, for logging and notifications.
 pub enum AutoSwitch {
-    /// Nothing to do: disabled, no active account, or still under threshold.
+    /// Nothing to do, and the numbers say so: switching is off, there is no
+    /// account to switch away from, or the active one is still under its
+    /// thresholds.
     Idle,
+    /// Nothing was decided because there was nothing to decide on: no reading
+    /// recent enough to act upon. Kept apart from `Idle` because "all clear"
+    /// and "cannot see" are not the same news — the standstill latch in
+    /// `lib.rs` is cleared by the first and left alone by the second.
+    Blind,
     /// Moved from one account to another because a window filled up.
     Switched {
         from: String,
@@ -176,7 +183,22 @@ pub enum AutoSwitch {
         reason: String,
     },
     /// Threshold reached but no account left to move to.
-    Exhausted { reason: String },
+    Exhausted {
+        reason: String,
+        standstill: Standstill,
+    },
+}
+
+/// An exhaustion stripped to what makes it a different one: the account nobody
+/// could be moved off, and the window that pinned it there.
+///
+/// The percentages are deliberately not part of it. They keep creeping while
+/// the situation stays exactly what it was, and a message that repeats itself
+/// because a number went from 97 to 98 is the loop this exists to end.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Standstill {
+    pub account: String,
+    pub window: usage::Kind,
 }
 
 /// Check the active account against its thresholds and rotate if it is spent.
@@ -192,7 +214,7 @@ pub async fn auto_switch(cache: &usage::Cache) -> Result<AutoSwitch> {
         return Ok(AutoSwitch::Idle);
     };
     let Ok(active_meta) = store::load_meta(&active_id) else {
-        return Ok(AutoSwitch::Idle);
+        return Ok(AutoSwitch::Blind);
     };
 
     let current = usage::for_profile(cache, &active_id, false).await?;
@@ -200,7 +222,7 @@ pub async fn auto_switch(cache: &usage::Cache) -> Result<AutoSwitch> {
     // as an hour. Fine for a card that says how old they are; no basis at all
     // for moving the user off an account whose window may have reset since.
     if !current.is_actionable() {
-        return Ok(AutoSwitch::Idle);
+        return Ok(AutoSwitch::Blind);
     }
     let Some(hit) = current.hits(
         active_meta.five_hour_threshold,
@@ -236,7 +258,13 @@ pub async fn auto_switch(cache: &usage::Cache) -> Result<AutoSwitch> {
         });
     }
 
-    Ok(AutoSwitch::Exhausted { reason })
+    Ok(AutoSwitch::Exhausted {
+        reason,
+        standstill: Standstill {
+            account: active_id,
+            window: hit.kind,
+        },
+    })
 }
 
 /// The account launch settled on, and the number it was settled by — what the

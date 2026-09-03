@@ -9,7 +9,7 @@ mod tray;
 mod update;
 mod usage;
 
-use actions::{AutoSwitch, CurrentAccount};
+use actions::{AutoSwitch, CurrentAccount, Standstill};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -476,12 +476,45 @@ struct AutoSwitched {
     reason: String,
 }
 
+/// The standstill already announced, so "nothing left to switch to" is said
+/// once instead of once a minute.
+///
+/// The evaluation runs on every tick and on every Refresh, and while nobody is
+/// working its answer is the same answer: an account over its threshold with no
+/// unspent account behind it stays that way for hours. The sentence is worth
+/// one notification and no more — the rest of the telling is the window, where
+/// the meters stay full and the tray icon keeps its warning.
+///
+/// Not persisted, for the same reason the token failures are not: a restart is
+/// entitled to say it again, and by then the app has stopped watching anyway.
+#[derive(Default)]
+struct Announced(std::sync::Mutex<Option<Standstill>>);
+
+impl Announced {
+    /// Returns whether this is news, and remembers it either way. `None` ends
+    /// the episode: whatever comes next is news again.
+    fn set(&self, standstill: Option<Standstill>) -> bool {
+        match self.0.lock() {
+            Ok(mut slot) if *slot != standstill => {
+                *slot = standstill;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Check the active account against its thresholds, and tell the UI whatever
 /// came of it. Cheap and silent when there is nothing to do, so it is safe to
 /// call from anywhere fresh numbers arrive.
 async fn evaluate_auto_switch(app: &AppHandle, cache: &Cache) {
-    match actions::auto_switch(cache).await {
+    let outcome = actions::auto_switch(cache).await;
+    let announced = app.state::<Announced>();
+    match outcome {
         Ok(AutoSwitch::Switched { from, to, reason }) => {
+            // Somewhere to go after all: whatever standstill was announced is
+            // over, and the next one is worth hearing about.
+            announced.set(None);
             notify_changed(app);
             // Two different things: the event is data, for a window that has a
             // list to redraw, and it is dropped when there is no window to hear
@@ -495,14 +528,26 @@ async fn evaluate_auto_switch(app: &AppHandle, cache: &Cache) {
             );
             let _ = app.emit("auto-switched", AutoSwitched { from, to, reason });
         }
-        // Nothing to redraw here — the message is the whole of it.
-        Ok(AutoSwitch::Exhausted { reason }) => {
-            notice::info(
-                app,
-                i18n::t_args("autoswitch.exhausted", &[("reason", &reason)]),
-            );
+        // Nothing to redraw here — the message is the whole of it, and only
+        // the first time. What ends the silence is the situation changing: a
+        // window resetting, an account added or freed, the user moving
+        // themselves — all of which come back through one of the arms below.
+        Ok(AutoSwitch::Exhausted { reason, standstill }) => {
+            if announced.set(Some(standstill)) {
+                notice::info(
+                    app,
+                    i18n::t_args("autoswitch.exhausted", &[("reason", &reason)]),
+                );
+            }
         }
-        Ok(AutoSwitch::Idle) => {}
+        // Under threshold again, or not in the business of switching at all:
+        // either way there is no standstill to be holding on to.
+        Ok(AutoSwitch::Idle) => {
+            announced.set(None);
+        }
+        // This pass learned nothing, which is not the same as learning that
+        // the situation changed. Leave the latch as it was.
+        Ok(AutoSwitch::Blind) => {}
         // A failed check is usually a network blip; the next tick retries.
         Err(e) => eprintln!("auto-switch: {e:#}"),
     }
@@ -756,6 +801,7 @@ pub fn run() {
         .manage(update::Latest::default())
         .manage(StartupPick::default())
         .manage(notice::Pending::default())
+        .manage(Announced::default())
         .manage(TokenErrors::default())
         .invoke_handler(tauri::generate_handler![
             list_profiles,
@@ -914,5 +960,49 @@ mod tests {
         assert!(after.changed);
         assert!(after.fresh.is_empty(), "work was already failing");
         assert_eq!(errors.snapshot().keys().collect::<Vec<_>>(), ["work"]);
+    }
+
+    fn standstill(account: &str, window: usage::Kind) -> Standstill {
+        Standstill {
+            account: account.to_string(),
+            window,
+        }
+    }
+
+    /// The evaluation runs every minute and on every Refresh, and while every
+    /// account is spent it keeps reaching the same conclusion. The user hears
+    /// it once.
+    #[test]
+    fn a_standstill_is_announced_once() {
+        let announced = Announced::default();
+        let stuck = standstill("work", usage::Kind::FiveHour);
+
+        assert!(announced.set(Some(stuck.clone())));
+        assert!(!announced.set(Some(stuck.clone())), "the same standstill");
+        assert!(!announced.set(Some(stuck)), "and still the same one");
+    }
+
+    /// What ends the silence: the window resets, an account is added or freed,
+    /// the user moves themselves. All of them come back as an evaluation that
+    /// is no longer a standstill, and the next one is news again.
+    #[test]
+    fn a_standstill_that_ends_is_news_when_it_returns() {
+        let announced = Announced::default();
+        let stuck = standstill("work", usage::Kind::FiveHour);
+
+        announced.set(Some(stuck.clone()));
+        announced.set(None);
+        assert!(announced.set(Some(stuck)));
+    }
+
+    /// Being stuck somewhere else, or stuck on the other window, is a different
+    /// sentence about a different situation — not a repeat.
+    #[test]
+    fn a_different_standstill_is_worth_saying() {
+        let announced = Announced::default();
+
+        assert!(announced.set(Some(standstill("work", usage::Kind::FiveHour))));
+        assert!(announced.set(Some(standstill("personal", usage::Kind::FiveHour))));
+        assert!(announced.set(Some(standstill("personal", usage::Kind::SevenDay))));
     }
 }

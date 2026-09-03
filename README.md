@@ -100,6 +100,15 @@ app decides per message, and never sends the same one twice:
   runs. That covers the auto-switch, the "nothing left to switch to" case and a
   token that will not renew: everything that happens on its own.
 
+A message that is really a *state* is said once and then left alone. "Nothing
+left to switch to" is the same answer every minute for as long as it holds, so
+it is announced when the standstill starts and not again until something moves
+it: a window resetting, an account added or freed, or you switching yourself.
+Being stuck on a different account, or on the other window, is a different
+situation and does get said. In between, the telling is the window — meters
+sitting full, and the warning on the tray icon. A token that will not renew
+works the same way, with the mark on its card doing the telling.
+
 A launch landing on the freest account is the exception, and stays inside the
 window: a notification at every login would be something to dismiss rather than
 something to read. So is anything answering a button you just pressed — Refresh,

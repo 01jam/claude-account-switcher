@@ -164,15 +164,23 @@ impl Usage {
     /// left with six days to go is a tighter week than 70% left the day before
     /// a reset. A window resetting inside the day is floored at one day: below
     /// that the ratio runs away, and "it resets in ten minutes" is no reason to
-    /// start on an account with nothing left in it right now. A window that
-    /// names no reset is measured against the whole seven, which is the most
-    /// cautious reading of a date we do not have.
+    /// start on an account with nothing left in it right now.
+    ///
+    /// A missing reset date is two cases wearing one face, and they rank
+    /// apart. The endpoint dates a window it is running, so one at nothing
+    /// with no date is a week that has not started: its seven days begin when
+    /// the account is picked up rather than now, there is nothing yet to
+    /// spread, and it takes the same floor of one day — the widest this ratio
+    /// goes, which is what an untouched account is. A dateless window with
+    /// something spent in it is a date we do not have, and the whole seven is
+    /// the cautious reading of that.
     pub fn weekly_room_per_day(&self, now: u64) -> Option<f64> {
         let week = self.seven_day.as_ref()?;
-        let days = week
-            .days_to_reset(now)
-            .unwrap_or(WEEK_DAYS)
-            .clamp(1.0, WEEK_DAYS);
+        let days = match week.days_to_reset(now) {
+            Some(days) => days.clamp(1.0, WEEK_DAYS),
+            None if week.utilization <= 0.0 => 1.0,
+            None => WEEK_DAYS,
+        };
         Some((100.0 - week.utilization).max(0.0) / days)
     }
 }
@@ -879,8 +887,18 @@ mod tests {
             week(30.0, Some("2026-08-23T00:00:00Z")).weekly_room_per_day(NOW),
             Some(70.0)
         );
-        // No date to measure against: assume the whole window is ahead.
+        // No date to measure against, and something spent: assume the whole
+        // window is ahead.
         assert_eq!(week(30.0, None).weekly_room_per_day(NOW), Some(10.0));
+        // No date and nothing spent is the other case entirely — a week that
+        // has not started outranks every week that has, however little of one
+        // is gone.
+        let untouched = week(0.0, None).weekly_room_per_day(NOW).expect("ranks");
+        let barely_used = week(17.0, Some("2026-08-27T15:00:00Z"))
+            .weekly_room_per_day(NOW)
+            .expect("ranks");
+        assert_eq!(untouched, 100.0);
+        assert!(untouched > barely_used);
 
         // A spent week has no room, and an account with no weekly window
         // cannot be ranked at all.

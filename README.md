@@ -73,8 +73,13 @@ room per day = (100 - week used) / days until the week resets
 So 20 points to make six days last (3.3 a day) is a tighter week than 70 points
 for one day (70), and the second account wins. Below a day the divisor stops
 falling — a window resetting in ten minutes is not a reason to start on an
-account with nothing left in it right now — and a window that names no reset
-date is measured against the whole seven.
+account with nothing left in it right now.
+
+A window with no reset date is read by what is in it. At nothing, the week has
+not started: its seven days begin when you pick the account up rather than now,
+so there is nothing yet to spread and the account ranks ahead of every week
+already running. With something spent in it, the date is one the endpoint did
+not send, and the whole seven is the cautious reading of that.
 
 It runs once per launch, before the window is up, and it is deliberately quiet
 about the cases it declines: an account whose usage cannot be read is not a

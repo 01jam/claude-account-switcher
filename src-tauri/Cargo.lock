@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "claude-switch"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",

@@ -216,11 +216,35 @@ In the tray menu each account carries both percentages. When a counter comes
 within 5 points of its threshold a `⚠` appears next to the name and the panel
 icon takes a warning badge.
 
+### Signing in
+
+**Add account** opens a window of the app's own on claude.ai and runs the same
+sign-in `claude /login` runs: authorization code with PKCE, against Claude
+Code's public client, so the tokens that come out are the ones the CLI would
+have saved. There is no code to paste — the window watches for the redirect to
+the CLI's callback page and takes the code off the URL itself — and no terminal,
+no signing out of the account in use.
+
+Every account keeps **its own browser data** (cookies and claude.ai session,
+under `~/.config/claude-switch/browser/`):
+
+- a new sign-in starts from empty data, so no claude.ai session already open
+  somewhere else can answer in place of the account you mean to add;
+- **Sign in again**, in an account's menu, reopens that account's own data with
+  its email suggested: while the claude.ai session is still alive it is one
+  click on *Authorize*; when it has lapsed too, the page asks for the email.
+
+Whatever account the sign-in ends up as is what gets saved, matched by email:
+one already in the list is updated in place — and if it is the account in use,
+Claude Code's own login with it — anything else becomes a new account. Closing
+the window before the end changes nothing. On macOS the separate data needs
+macOS 14; older versions share one.
+
 ### Renewing the tokens
 
-Claude Code owns the login *flow*, but not the renewal: the refresh token it
-stores was issued to its own public client, so the same grant works from here
-and produces exactly the credentials the CLI would have written. The app runs a
+The refresh token a login stores was issued to Claude Code's public client, so
+the same grant works from here and produces exactly the credentials the CLI
+would have written. The app runs a
 pass every 20 seconds — a few expiry dates read off disk, and no traffic at all
 unless something is actually due:
 
@@ -242,8 +266,8 @@ the cure for Claude Code's own
 > Failed to refresh OAuth token: another Claude Code process is refreshing it or
 > exited mid-refresh
 
-left behind by a session that died mid-write. Switching accounts and signing out
-take the same lock.
+left behind by a session that died mid-write. Switching accounts and saving a
+sign-in take the same lock.
 
 If a session is holding it right now, the renewal is not forced: it is deferred
 and retried on the next pass, seconds later. And **Renew token** in an account's
@@ -257,10 +281,14 @@ renewing and Refresh all do that on their own — this is the button for when yo
 signed in outside the app and want the copy brought up to date this second.
 
 A refresh token that has been revoked or already spent cannot be renewed by
-anyone. The app says so once — the same failure comes back every 20 seconds and
-is not news each time — and leaves a red mark on that account's card for as long
-as it lasts, carrying the reason in its tooltip; pressing it tries again. That
-account needs a fresh `claude` login.
+anyone. The endpoint answers both that and a request it merely words
+differently with a 400, so the app reads the body: an `invalid_scope` is retried
+once with the scopes the CLI asks for, the way Claude Code does, and only what
+is still refused counts as a dead token — with the endpoint's own reason
+(`invalid_grant: …`) carried in the message. The app says so once — the same
+failure comes back every 20 seconds and is not news each time — and leaves a red
+mark on that account's card for as long as it lasts, carrying the reason in its
+tooltip; pressing it opens **Sign in again**.
 
 ### Finding a new version
 
@@ -393,8 +421,8 @@ sudo sysctl --system
 
 1. You are already signed in with one account: open the app and press **Save**
    in the "Login not saved" banner.
-2. **Add account** → sign out, open a terminal, log in with the second account,
-   come back and press **Save account**.
+2. **Add account** → sign in with the second account in the window that opens.
+   It is saved as soon as the window closes on its own.
 3. From then on: click an account in the list, or pick one from the tray menu.
 
 The window carries no system decorations: the bar at the top is drawn by the app

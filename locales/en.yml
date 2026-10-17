@@ -61,18 +61,19 @@ startup:
 accounts:
   list_label: Saved accounts
   empty_title: No saved accounts.
-  empty_hint: If you are already signed in with `claude`, save the current login; then add the second account.
+  empty_hint: Press “Add account” and sign in. If you are already signed in with `claude`, you can also save that login.
   reorder: Reorder {name}
   actions_for: Actions for {name}
   rename: Rename
   refresh_token: Renew token
+  relogin: Sign in again
   rename_title: Rename account
   name_field: Name
   delete_title: Delete “{name}”?
   delete_body: The credentials saved for this account will be removed. You will have to sign in again to add it back.
   token_expired: token expired
   token_failed: Token renewal failed
-  token_retry: Press to try again.
+  token_retry: Press to sign in again.
   used_today: used today
   used_yesterday: yesterday
   used_days_ago: "{days} days ago"
@@ -86,14 +87,9 @@ login:
   unsaved_fallback: An account
   save_current: Save current login
   add: Add account
-  add_title: Add an account
-  step_logout: Sign out of the current account (it stays saved, you do not lose it).
-  logout: Sign out
-  step_terminal: Open a terminal and complete the login in the browser.
-  open_terminal: Open terminal
-  step_save: Come back here and save the new account.
-  save_account: Save account
-  terminal_hint: Done signing in? Go back to Claude Account Switcher and press "Save account".
+  window_title: Sign in to Claude
+  saved_new: "“{name}” added."
+  saved_existing: "“{name}” signed in again."
 
 tokens:
   renewed_one: "Token renewed for “{name}”."
@@ -133,13 +129,16 @@ update:
 
 errors:
   no_login: no login found — run `claude` and sign in before saving
-  no_terminal: no terminal emulator found — open one yourself and run `claude`
   empty_name: the name cannot be empty
   autostart: "cannot set launch at login: {error}"
   rate_limited: too many requests to the API
   no_token: no token saved for this account
-  no_refresh_token: no refresh token saved for this account — sign in again with `claude`
-  refresh_rejected: the refresh token was refused — sign in again with `claude`
+  no_refresh_token: no refresh token saved for this account — use “Sign in again” from its menu
+  refresh_rejected: "the refresh token was refused{reason} — use “Sign in again” from the account menu"
+  login_cancelled: sign-in cancelled
+  login_failed: "sign-in failed: {error}"
+  login_no_email: the sign-in did not say which account it was for
+  login_open: a sign-in window is already open
   login_busy: Claude Code is writing its login right now
   invalid_token: invalid or expired token
   api_status: the API answered {status}

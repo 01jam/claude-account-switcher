@@ -38,6 +38,11 @@ pub struct Meta {
     /// Position in the user-defined rotation. Absent means "not sorted yet".
     #[serde(default)]
     pub order: Option<u32>,
+    /// The login window's own browser data for this account — the claude.ai
+    /// session a re-login starts from. A name under `browser/`, absent for an
+    /// account that was never signed in through the app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser: Option<String>,
 }
 
 /// A saved account as the UI sees it.
@@ -212,6 +217,9 @@ pub fn exists(id: &str) -> bool {
 }
 
 pub fn delete(id: &str) -> Result<()> {
+    if let Some(browser) = load_meta(id).ok().and_then(|m| m.browser) {
+        remove_browser(&browser);
+    }
     let dir = profile_dir(id)?;
     if dir.exists() {
         fs::remove_dir_all(&dir)?;
@@ -277,6 +285,37 @@ pub fn set_thresholds(id: &str, five_hour: f64, seven_day: f64) -> Result<()> {
     meta.five_hour_threshold = five_hour.clamp(1.0, 100.0);
     meta.seven_day_threshold = seven_day.clamp(1.0, 100.0);
     save_meta(id, &meta)
+}
+
+/// Where the login window keeps one account's cookies. Apart from the profile
+/// on purpose: a sign-in starts before anyone knows which account it is for,
+/// and a folder a running webview holds open is not one to rename afterwards.
+pub fn browser_dir(name: &str) -> Result<PathBuf> {
+    let dir = root()?.join("browser").join(sanitize_id(name)?);
+    fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(dir)
+}
+
+/// A name for a browser folder nobody has used: 32 hex digits, which is also
+/// the 16 bytes macOS identifies a data store by.
+pub fn new_browser_name() -> Result<String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(|e| anyhow!("no randomness available: {e}"))?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Best effort: a session nobody will open again is only clutter.
+pub fn remove_browser(name: &str) {
+    if let Ok(dir) = root().map(|r| r.join("browser")) {
+        if let Ok(name) = sanitize_id(name) {
+            let _ = fs::remove_dir_all(dir.join(name));
+        }
+    }
 }
 
 fn state_path() -> Result<PathBuf> {

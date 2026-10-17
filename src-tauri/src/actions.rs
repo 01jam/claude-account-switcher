@@ -131,6 +131,7 @@ pub fn capture(label: Option<String>) -> Result<Profile> {
                     five_hour_threshold: store::DEFAULT_THRESHOLD,
                     seven_day_threshold: store::DEFAULT_THRESHOLD,
                     order: None,
+                    browser: None,
                 },
             )
         }
@@ -359,16 +360,6 @@ pub async fn start_on_freest(cache: &usage::Cache) -> Result<Option<Picked>> {
     }
 }
 
-/// Clear the live login so `claude` prompts for a fresh one. The active profile
-/// keeps its own copy, so this is not destructive.
-pub fn logout_current() -> Result<()> {
-    sync_active()?;
-    store::backup(&claude::read_credentials()?, &claude::read_account_keys()?)?;
-    claude::remove_credentials()?;
-    claude::write_account_keys(&serde_json::Value::Object(Default::default()))?;
-    store::set_active(None)
-}
-
 pub fn rename(id: &str, label: &str) -> Result<()> {
     let label = label.trim();
     if label.is_empty() {
@@ -377,76 +368,6 @@ pub fn rename(id: &str, label: &str) -> Result<()> {
     let mut meta = store::load_meta(id)?;
     meta.label = label.to_string();
     store::save_meta(id, &meta)
-}
-
-const TERMINALS: &[(&str, &[&str])] = &[
-    ("gnome-terminal", &["--"]),
-    ("konsole", &["-e"]),
-    ("xfce4-terminal", &["-e"]),
-    ("tilix", &["-e"]),
-    ("kitty", &[]),
-    ("alacritty", &["-e"]),
-    ("wezterm", &["start", "--"]),
-    ("x-terminal-emulator", &["-e"]),
-    ("xterm", &["-e"]),
-];
-
-/// What the terminal runs: the login, then a note, then a shell left open so
-/// anything `claude` printed stays readable.
-fn login_command() -> String {
-    format!(
-        "claude; echo; echo '{}'; exec ${{SHELL:-bash}}",
-        i18n::t("login.terminal_hint").replace('\'', "'\\''")
-    )
-}
-
-/// Open a terminal running `claude` so the user can complete the OAuth login.
-#[cfg(not(target_os = "macos"))]
-pub fn open_login_terminal() -> Result<()> {
-    use std::process::Command;
-
-    let shell_cmd = login_command();
-
-    for (bin, args) in TERMINALS {
-        if which(bin).is_none() {
-            continue;
-        }
-        let mut cmd = Command::new(bin);
-        cmd.args(*args).arg("bash").arg("-lc").arg(&shell_cmd);
-        if cmd.spawn().is_ok() {
-            return Ok(());
-        }
-    }
-    Err(anyhow!(i18n::t("errors.no_terminal")))
-}
-
-/// macOS has one terminal worth assuming, and AppleScript is the only way to
-/// hand it a command; `open -a Terminal` can launch the app but not a command.
-#[cfg(target_os = "macos")]
-pub fn open_login_terminal() -> Result<()> {
-    use std::process::Command;
-
-    // Doubling the backslashes and quotes: the string travels through
-    // AppleScript's own literal syntax before it reaches the shell.
-    let inner = login_command().replace('\\', "\\\\").replace('"', "\\\"");
-    let script = format!("tell application \"Terminal\"\nactivate\ndo script \"{inner}\"\nend tell");
-
-    let ok = Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if ok {
-        return Ok(());
-    }
-
-    // Last resort: an empty terminal is still better than nothing — the user
-    // can type `claude` into it.
-    if Command::new("open").arg("-a").arg("Terminal").status().is_ok() {
-        return Ok(());
-    }
-    Err(anyhow!(i18n::t("errors.no_terminal")))
 }
 
 #[cfg(not(target_os = "macos"))]

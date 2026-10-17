@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import {
-  Button,
-  Dialog,
-  DialogTrigger,
-  Heading,
-  Modal,
-  ModalOverlay,
-} from "react-aria-components";
+import { Button } from "react-aria-components";
 import {
   IconArrowsExchange,
   IconDeviceFloppy,
-  IconLogout,
   IconRefresh,
   IconSettings,
-  IconTerminal2,
   IconUserPlus,
 } from "@tabler/icons-react";
 
@@ -245,6 +236,31 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
     [reload, say],
   );
 
+  // Not through `run`: the login window can stay open for minutes while an
+  // email code arrives, and the list has no reason to freeze meanwhile. A
+  // second press while it is open just brings it forward — the backend sees to
+  // that.
+  const signIn = useCallback(
+    async (id?: string) => {
+      try {
+        const known = new Set(profiles.map((p) => p.id));
+        const saved = await api.loginAccount(id);
+        if (saved) {
+          say(
+            t(known.has(saved.id) ? "login.saved_existing" : "login.saved_new", {
+              name: saved.label,
+            }),
+          );
+          await reload();
+          await loadUsage(true);
+        }
+      } catch (e) {
+        say(String(e), "error");
+      }
+    },
+    [profiles, reload, loadUsage, say, t],
+  );
+
   return (
     <main className="app">
       {/* The window has no system decorations: this bar is what moves it, and
@@ -333,6 +349,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
           busy={busy}
           autoSwitch={settings?.autoSwitch ?? false}
           onSwitch={(id) => run(() => api.switchProfile(id))}
+          onRelogin={(id) => signIn(id)}
           onRefreshToken={(id) =>
             run(async () => {
               await api.refreshProfileToken(id);
@@ -349,12 +366,14 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
       </div>
 
       <footer className="app-footer">
-        <AddAccountDialog
-          busy={busy}
-          onOpenTerminal={() => run(api.openLoginTerminal)}
-          onLogout={() => run(api.logout)}
-          onSave={() => run(() => api.saveCurrentAccount())}
-        />
+        <Button
+          className="btn btn-primary"
+          isDisabled={busy}
+          onPress={() => signIn()}
+        >
+          <IconUserPlus size={16} />
+          {t("login.add")}
+        </Button>
         {current?.loggedIn && !current.unsaved && (
           <Button
             className="btn btn-ghost"
@@ -464,80 +483,4 @@ function statusLine(
     plan: current.subscription ? ` · ${current.subscription}` : "",
     count: profiles.length,
   });
-}
-
-type AddProps = {
-  busy: boolean;
-  onOpenTerminal: () => void;
-  onLogout: () => void;
-  onSave: () => void;
-};
-
-// Claude Code owns the OAuth flow, so adding an account is: log out, let the
-// CLI log in from a terminal, then capture what it left behind.
-function AddAccountDialog({ busy, onOpenTerminal, onLogout, onSave }: AddProps) {
-  const t = useT();
-
-  return (
-    <DialogTrigger>
-      <Button className="btn btn-primary" isDisabled={busy}>
-        <IconUserPlus size={16} />
-        {t("login.add")}
-      </Button>
-      <ModalOverlay className="overlay" isDismissable>
-        <Modal className="modal">
-          <Dialog className="dialog">
-            {({ close }) => (
-              <>
-                <Heading slot="title">{t("login.add_title")}</Heading>
-                <ol className="steps">
-                  <li>
-                    {t("login.step_logout")}
-                    <Button
-                      className="btn btn-ghost btn-sm"
-                      onPress={onLogout}
-                      isDisabled={busy}
-                    >
-                      <IconLogout size={15} />
-                      {t("login.logout")}
-                    </Button>
-                  </li>
-                  <li>
-                    {t("login.step_terminal")}
-                    <Button
-                      className="btn btn-ghost btn-sm"
-                      onPress={onOpenTerminal}
-                      isDisabled={busy}
-                    >
-                      <IconTerminal2 size={15} />
-                      {t("login.open_terminal")}
-                    </Button>
-                  </li>
-                  <li>
-                    {t("login.step_save")}
-                    <Button
-                      className="btn btn-ghost btn-sm"
-                      onPress={() => {
-                        onSave();
-                        close();
-                      }}
-                      isDisabled={busy}
-                    >
-                      <IconDeviceFloppy size={15} />
-                      {t("login.save_account")}
-                    </Button>
-                  </li>
-                </ol>
-                <div className="dialog-actions">
-                  <Button className="btn btn-ghost" onPress={close}>
-                    {t("app.close")}
-                  </Button>
-                </div>
-              </>
-            )}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
-    </DialogTrigger>
-  );
 }

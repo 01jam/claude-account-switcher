@@ -1,6 +1,7 @@
 mod actions;
 mod claude;
 mod i18n;
+mod login;
 mod notice;
 mod oauth;
 mod pace;
@@ -208,16 +209,28 @@ fn sync_active_profile(app: AppHandle) -> Result<(), String> {
     result
 }
 
+/// Sign an account in through the app's own login window: `id` to sign that
+/// account in again, `None` for a new one. `Ok(None)` is the window closed
+/// before the end — nothing to report.
 #[tauri::command]
-fn logout(app: AppHandle) -> Result<(), String> {
-    let result = to_string_err(actions::logout_current());
+async fn login_account(
+    app: AppHandle,
+    cache: State<'_, Cache>,
+    id: Option<String>,
+) -> Result<Option<Profile>, String> {
+    let result = match login::run(&app, id.as_deref()).await {
+        Ok(profile) => {
+            // Whatever the last renewal said about this account was about
+            // tokens it no longer has.
+            cache.clear_cooldown(&profile.id);
+            clear_token_error(&app, &profile.id);
+            Ok(Some(profile))
+        }
+        Err(e) if e.downcast_ref::<login::Cancelled>().is_some() => Ok(None),
+        Err(e) => Err(format!("{e:#}")),
+    };
     notify_changed(&app);
     result
-}
-
-#[tauri::command]
-fn open_login_terminal() -> Result<(), String> {
-    to_string_err(actions::open_login_terminal())
 }
 
 #[tauri::command]
@@ -811,8 +824,7 @@ pub fn run() {
             rename_profile,
             delete_profile,
             sync_active_profile,
-            logout,
-            open_login_terminal,
+            login_account,
             fetch_usage,
             refresh_tokens,
             refresh_profile_token,
@@ -863,8 +875,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // Closing the window leaves the app alive in the tray.
-            WindowEvent::CloseRequested { api, .. } => {
+            // Closing the window leaves the app alive in the tray. The main
+            // one only: the login window really closes, and that is how it
+            // says the sign-in was abandoned.
+            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 api.prevent_close();
                 hide_to_tray(window);
             }

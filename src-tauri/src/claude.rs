@@ -75,14 +75,6 @@ fn set_private(_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn remove_credentials_file() -> Result<()> {
-    match fs::remove_file(credentials_path()?) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e.into()),
-    }
-}
-
 #[cfg(not(target_os = "macos"))]
 pub fn read_credentials() -> Result<Option<Value>> {
     read_json(&credentials_path()?)
@@ -91,11 +83,6 @@ pub fn read_credentials() -> Result<Option<Value>> {
 #[cfg(not(target_os = "macos"))]
 fn write_credentials_unlocked(value: &Value) -> Result<()> {
     write_json_atomic(&credentials_path()?, value, true)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn remove_credentials_unlocked() -> Result<()> {
-    remove_credentials_file()
 }
 
 /// Where a macOS install actually keeps its tokens.
@@ -137,21 +124,11 @@ fn write_credentials_unlocked(value: &Value) -> Result<()> {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn remove_credentials_unlocked() -> Result<()> {
-    // Both, unconditionally: a logout that leaves a copy behind in the store it
-    // did not pick would silently log the user back in.
-    keychain::remove()?;
-    remove_credentials_file()
-}
-
 /// The macOS login Keychain, as Claude Code uses it.
 #[cfg(target_os = "macos")]
 mod keychain {
     use anyhow::{Context, Result};
-    use security_framework::passwords::{
-        delete_generic_password, get_generic_password, set_generic_password,
-    };
+    use security_framework::passwords::{get_generic_password, set_generic_password};
     use serde_json::Value;
 
     /// The service name Claude Code stores its credentials under. Matching it
@@ -188,12 +165,6 @@ mod keychain {
         let bytes = serde_json::to_vec(value)?;
         set_generic_password(SERVICE, &account(), &bytes)
             .context("cannot write the login to the Keychain")
-    }
-
-    pub fn remove() -> Result<()> {
-        // Absent is the desired end state, so a failed delete is not an error.
-        let _ = delete_generic_password(SERVICE, &account());
-        Ok(())
     }
 }
 
@@ -309,11 +280,6 @@ where
 pub fn write_credentials(value: &Value) -> Result<()> {
     let _lock = lock_writes(LOCK_WAIT)?;
     write_credentials_unlocked(value)
-}
-
-pub fn remove_credentials() -> Result<()> {
-    let _lock = lock_writes(LOCK_WAIT)?;
-    remove_credentials_unlocked()
 }
 
 pub fn read_config() -> Result<Value> {

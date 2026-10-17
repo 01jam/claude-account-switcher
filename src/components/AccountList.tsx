@@ -26,6 +26,7 @@ import {
   IconGripVertical,
   IconPencil,
   IconRefreshAlert,
+  IconLogin2,
   IconTrash,
   IconUserCircle,
   IconUsersGroup,
@@ -47,6 +48,8 @@ type Props = {
   onSwitch: (id: string) => void;
   /** Renew this account's OAuth token now, whatever its expiry says. */
   onRefreshToken: (id: string) => void;
+  /** Sign this account in again from its own browser session. */
+  onRelogin: (id: string) => void;
   onRename: (id: string, label: string) => void;
   onDelete: (id: string) => void;
   onThresholds: (id: string, fiveHour: number, sevenDay: number) => void;
@@ -61,6 +64,7 @@ export default function AccountList({
   autoSwitch,
   onSwitch,
   onRefreshToken,
+  onRelogin,
   onRename,
   onDelete,
   onThresholds,
@@ -156,13 +160,14 @@ export default function AccountList({
 
                 {tokenError && (
                   // A button rather than a bare glyph: the tooltip needs a
-                  // focusable trigger to reach a keyboard at all, and the one
-                  // thing worth doing about a failed renewal is another one.
+                  // focusable trigger to reach a keyboard at all. Pressing it
+                  // signs in again: a refusal is final, and a hiccup the keeper
+                  // will retry by itself anyway.
                   <TooltipTrigger delay={200}>
                     <Button
                       className="account-alert"
                       aria-label={`${t("accounts.token_failed")} — ${tokenError}`}
-                      onPress={() => onRefreshToken(profile.id)}
+                      onPress={() => onRelogin(profile.id)}
                     >
                       <IconAlertTriangle size={18} />
                     </Button>
@@ -187,6 +192,7 @@ export default function AccountList({
                       onAction={(key) => {
                         if (key === "rename") setEditing(profile);
                         if (key === "refresh") onRefreshToken(profile.id);
+                        if (key === "relogin") onRelogin(profile.id);
                         if (key === "delete") setConfirming(profile);
                       }}
                     >
@@ -197,6 +203,10 @@ export default function AccountList({
                       <MenuItem className="menu-item" id="refresh">
                         <IconRefreshAlert size={16} />
                         {t("accounts.refresh_token")}
+                      </MenuItem>
+                      <MenuItem className="menu-item" id="relogin">
+                        <IconLogin2 size={16} />
+                        {t("accounts.relogin")}
                       </MenuItem>
                       <MenuItem
                         className="menu-item menu-item-danger"

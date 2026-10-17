@@ -69,18 +69,19 @@ startup:
 accounts:
   list_label: Account salvati
   empty_title: Nessun account salvato.
-  empty_hint: Se sei già connesso con `claude`, salva il login corrente; poi aggiungi il secondo account.
+  empty_hint: Premi «Aggiungi account» e accedi. Se sei già connesso con `claude`, puoi anche salvare quel login.
   reorder: Riordina {name}
   actions_for: Azioni per {name}
   rename: Rinomina
   refresh_token: Rinnova token
+  relogin: Rifai login
   rename_title: Rinomina account
   name_field: Nome
   delete_title: Eliminare «{name}»?
   delete_body: Le credenziali salvate per questo account verranno rimosse. Dovrai rifare il login per riaggiungerlo.
   token_expired: token scaduto
   token_failed: Rinnovo del token fallito
-  token_retry: Premi per riprovare.
+  token_retry: Premi per rifare il login.
   used_today: usato oggi
   used_yesterday: ieri
   used_days_ago: "{days} giorni fa"
@@ -94,14 +95,9 @@ login:
   unsaved_fallback: Un account
   save_current: Salva login corrente
   add: Aggiungi account
-  add_title: Aggiungi un account
-  step_logout: Disconnetti l'account corrente (resta salvato, non lo perdi).
-  logout: Disconnetti
-  step_terminal: Apri un terminale e completa il login nel browser.
-  open_terminal: Apri terminale
-  step_save: Torna qui e salva il nuovo account.
-  save_account: Salva account
-  terminal_hint: Login completato? Torna a Claude Account Switcher e premi "Salva account".
+  window_title: Accedi a Claude
+  saved_new: "“{name}” aggiunto."
+  saved_existing: "“{name}” di nuovo connesso."
 
 tokens:
   renewed_one: "Token rinnovato per “{name}”."
@@ -141,13 +137,16 @@ update:
 
 errors:
   no_login: nessun login trovato — esegui `claude` e accedi prima di salvare
-  no_terminal: nessun emulatore di terminale trovato — aprine uno ed esegui `claude`
   empty_name: il nome non può essere vuoto
   autostart: "non riesco a impostare l'avvio automatico: {error}"
   rate_limited: troppe richieste all'API
   no_token: nessun token salvato per questo account
-  no_refresh_token: nessun refresh token salvato per questo account — rifai il login con `claude`
-  refresh_rejected: il refresh token è stato rifiutato — rifai il login con `claude`
+  no_refresh_token: nessun refresh token salvato per questo account — usa «Rifai login» dal suo menu
+  refresh_rejected: "il refresh token è stato rifiutato{reason} — usa «Rifai login» dal menu dell'account"
+  login_cancelled: login annullato
+  login_failed: "login non riuscito: {error}"
+  login_no_email: il login non ha detto a quale account appartiene
+  login_open: c'è già una finestra di login aperta
   login_busy: Claude Code sta scrivendo il suo login proprio adesso
   invalid_token: token non valido o scaduto
   api_status: l'API ha risposto {status}

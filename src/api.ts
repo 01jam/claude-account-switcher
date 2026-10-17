@@ -152,8 +152,12 @@ export const api = {
     invoke<void>("rename_profile", { id, label }),
   deleteProfile: (id: string) => invoke<void>("delete_profile", { id }),
   syncActiveProfile: () => invoke<void>("sync_active_profile"),
-  logout: () => invoke<void>("logout"),
-  openLoginTerminal: () => invoke<void>("open_login_terminal"),
+  /** Sign in through the app's own login window: an id to sign that account
+   *  in again, nothing for a new one. Resolves to the account saved — matched
+   *  by email, so a "new" login of a known account updates it — or `null` when
+   *  the window was closed first. */
+  loginAccount: (id?: string) =>
+    invoke<Profile | null>("login_account", { id: id ?? null }),
 
   fetchUsage: (force = false) =>
     invoke<ProfileUsage[]>("fetch_usage", { force }),

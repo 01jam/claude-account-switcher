@@ -1,8 +1,8 @@
 //! Renewing the OAuth tokens, instead of waiting for Claude Code to do it.
 //!
-//! Claude Code owns the login *flow*, but not the renewal: the refresh token it
-//! stored was issued to its own public client, so the same grant works from
-//! here and produces exactly the credentials the CLI would have written itself.
+//! The refresh token a login stores was issued to Claude Code's own public
+//! client, so the same grant works from here and produces exactly the
+//! credentials the CLI would have written itself.
 //! Without this, an account nobody has run `claude` under simply rots — its
 //! access token expires, its meters go empty, and the auto-switch has nothing to
 //! judge it on.
@@ -34,11 +34,11 @@ use crate::store;
 /// Claude Code's token endpoint and public client id, both as the shipped CLI
 /// uses them. The client id is what the stored refresh token was issued to:
 /// no other value can renew it.
-const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
-const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const BETA_HEADER: &str = "oauth-2025-04-20";
+pub const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
+pub const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+pub const BETA_HEADER: &str = "oauth-2025-04-20";
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// How long to wait for the login write lock. Claude Code holds it only for the
 /// milliseconds a write takes, so failing to get it inside this means a session
@@ -69,18 +69,74 @@ const DEFAULT_SCOPES: &[&str] = &[
     "user:sessions:claude_code",
 ];
 
+/// What the shipped CLI asks a refresh for. The second try after an
+/// `invalid_scope`: the endpoint judges the request, not the grant, so a set it
+/// turned down is no verdict on the token itself.
+const CLI_SCOPES: &[&str] = &[
+    "user:profile",
+    "user:inference",
+    "user:sessions:claude_code",
+    "user:mcp_servers",
+    "user:file_upload",
+    "user:plugins",
+];
+
 /// A refusal no retry can fix: the refresh token has been spent, rotated away
-/// or revoked, and only a new `claude` login can replace it.
+/// or revoked, and only a new login can replace it. `reason` is the endpoint's
+/// own word for it, when it gave one — the only clue to *why* it died.
 #[derive(Debug)]
-pub struct Rejected;
+pub struct Rejected {
+    reason: Option<String>,
+}
 
 impl std::fmt::Display for Rejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", i18n::t("errors.refresh_rejected"))
+        let reason = self
+            .reason
+            .as_deref()
+            .map(|r| format!(" ({r})"))
+            .unwrap_or_default();
+        write!(
+            f,
+            "{}",
+            i18n::t_args("errors.refresh_rejected", &[("reason", &reason)])
+        )
     }
 }
 
 impl std::error::Error for Rejected {}
+
+/// The endpoint turned down the scopes asked for, not the refresh token: worth
+/// one more try with a different set before calling the token dead.
+#[derive(Debug)]
+struct InvalidScope;
+
+impl std::fmt::Display for InvalidScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid_scope")
+    }
+}
+
+impl std::error::Error for InvalidScope {}
+
+/// An OAuth error body, as far as the endpoint fills one in.
+#[derive(Deserialize, Default)]
+pub struct Refusal {
+    pub error: Option<String>,
+    pub error_description: Option<String>,
+}
+
+impl Refusal {
+    /// `invalid_grant: Refresh token not found`, or whichever half is there.
+    pub fn summary(&self) -> Option<String> {
+        match (self.error.as_deref(), self.error_description.as_deref()) {
+            (Some(code), Some(text)) if !text.is_empty() => Some(format!("{code}: {text}")),
+            (Some(code), _) => Some(code.to_string()),
+            (None, Some(text)) if !text.is_empty() => Some(text.to_string()),
+            _ => None,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // The credentials document
@@ -171,7 +227,7 @@ fn merged(credentials: &Value, token: &TokenResponse, previous_refresh: &str) ->
 // The call
 // ---------------------------------------------------------------------------
 
-async fn request(refresh_token: &str, scopes: &[String]) -> Result<TokenResponse> {
+async fn request_once(refresh_token: &str, scopes: &[String]) -> Result<TokenResponse> {
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()?;
@@ -190,19 +246,53 @@ async fn request(refresh_token: &str, scopes: &[String]) -> Result<TokenResponse
         .await?;
 
     let status = response.status();
+    if status.is_success() {
+        return Ok(response.json().await?);
+    }
+
+    // The body is what tells a dead token from a request worded wrong: both
+    // arrive as a 400, and only one of them needs a new login.
+    let refusal: Refusal = response.json().await.unwrap_or_default();
+    if refusal.error.as_deref() == Some("invalid_scope") {
+        return Err(InvalidScope.into());
+    }
     // 400 is what a spent or revoked refresh token earns, 401 a rejected
     // client: neither improves by asking again.
     if status == reqwest::StatusCode::BAD_REQUEST || status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Rejected.into());
+        return Err(Rejected {
+            reason: refusal.summary(),
+        }
+        .into());
     }
-    if !status.is_success() {
-        return Err(anyhow!(i18n::t_args(
-            "errors.api_status",
-            &[("status", &status.as_u16().to_string())]
-        )));
+    let mut message = i18n::t_args("errors.api_status", &[("status", &status.as_u16().to_string())]);
+    if let Some(summary) = refusal.summary() {
+        message = format!("{message} ({summary})");
     }
+    Err(anyhow!(message))
+}
 
-    Ok(response.json().await?)
+/// The renewal, with the CLI's own scope set as the second try when the stored
+/// one is refused — the same fallback Claude Code makes, the other way round.
+async fn request(refresh_token: &str, scopes: &[String]) -> Result<TokenResponse> {
+    match request_once(refresh_token, scopes).await {
+        Err(e) if e.downcast_ref::<InvalidScope>().is_some() => {
+            let fallback: Vec<String> = CLI_SCOPES.iter().map(|s| s.to_string()).collect();
+            if fallback == scopes {
+                return Err(Rejected {
+                    reason: Some("invalid_scope".into()),
+                }
+                .into());
+            }
+            match request_once(refresh_token, &fallback).await {
+                Err(e) if e.downcast_ref::<InvalidScope>().is_some() => Err(Rejected {
+                    reason: Some("invalid_scope".into()),
+                }
+                .into()),
+                other => other,
+            }
+        }
+        other => other,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +373,7 @@ async fn renew_stored(id: &str, margin_ms: u64) -> Result<Option<Value>> {
 /// already retired — and reporting a dead login that is in fact perfectly
 /// healthy. Whoever waits here re-reads the credentials afterwards and finds
 /// nothing left to do, which is the correct answer.
-fn gate() -> &'static Mutex<()> {
+pub(crate) fn gate() -> &'static Mutex<()> {
     static GATE: OnceLock<Mutex<()>> = OnceLock::new();
     GATE.get_or_init(|| Mutex::new(()))
 }

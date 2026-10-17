@@ -811,9 +811,17 @@ code {
   cursor: default;
 }
 
+/* Stacked, each the card's full width: the primary action first, the notes
+   under it. */
 .setting-update-actions {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
+}
+
+.setting-update-actions .btn {
+  justify-content: center;
 }
 
 .switch-indicator {

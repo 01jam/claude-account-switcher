@@ -52,12 +52,6 @@ opt-level = "s"
 panic = "abort"
 strip = true
 
-# macOS keeps the Claude Code login in the Keychain instead of a file. Going
-# through the framework rather than the `security` CLI keeps the token off the
-# process list.
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = "3"
-
 # Two things the cross-platform layer cannot express on GTK: blocking the window
 # manager's own fullscreen, and the NVIDIA rendering workaround. Pinned to the
 # version Tauri itself links, or the window handle would be a different type.

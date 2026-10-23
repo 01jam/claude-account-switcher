@@ -125,11 +125,24 @@ fn write_credentials_unlocked(value: &Value) -> Result<()> {
 }
 
 /// The macOS login Keychain, as Claude Code uses it.
+///
+/// Both the read and the write go through `/usr/bin/security`, the same tool
+/// Claude Code uses, rather than the in-process Security framework. This is
+/// deliberate: a Keychain item's partition-access list is stamped with the
+/// identity of the process that writes it, so an in-process write would stamp
+/// this app's own (ad-hoc, per-build) code hash and leave Claude Code's
+/// `/usr/bin/security` access off the list — producing a Keychain password
+/// prompt on every CLI start, and resetting the list again on every switch.
+/// Writing through `/usr/bin/security` keeps the item's partition `apple-tool:`
+/// for both sides, so neither is ever prompted. The secret is handed to
+/// `security` over stdin (`security -i`), never on argv, so it stays off the
+/// process list.
 #[cfg(target_os = "macos")]
 mod keychain {
-    use anyhow::{Context, Result};
-    use security_framework::passwords::{get_generic_password, set_generic_password};
+    use anyhow::{bail, Context, Result};
     use serde_json::Value;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
     /// The service name Claude Code stores its credentials under. Matching it
     /// exactly is what makes the switch visible to the CLI.
@@ -147,12 +160,30 @@ mod keychain {
             .unwrap_or_default()
     }
 
+    /// Single-quote an argument for `security -i`, which splits each line into
+    /// arguments the way a shell does.
+    fn sh_quote(s: &str) -> String {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+
     /// `None` covers both "no item" and "the item is not readable": either way
     /// there is no login here, and the file backend is tried next.
     pub fn read() -> Result<Option<Value>> {
-        let Ok(bytes) = get_generic_password(SERVICE, &account()) else {
-            return Ok(None);
+        let out = match Command::new("/usr/bin/security")
+            .args(["find-generic-password", "-w", "-a", &account(), "-s", SERVICE])
+            .output()
+        {
+            Ok(out) => out,
+            Err(_) => return Ok(None),
         };
+        if !out.status.success() {
+            return Ok(None);
+        }
+        // `-w` prints the secret followed by a single newline.
+        let mut bytes = out.stdout;
+        if bytes.last() == Some(&b'\n') {
+            bytes.pop();
+        }
         let text = String::from_utf8_lossy(&bytes);
         match serde_json::from_str(&text) {
             Ok(value) => Ok(Some(value)),
@@ -162,9 +193,33 @@ mod keychain {
     }
 
     pub fn write(value: &Value) -> Result<()> {
-        let bytes = serde_json::to_vec(value)?;
-        set_generic_password(SERVICE, &account(), &bytes)
-            .context("cannot write the login to the Keychain")
+        let secret = serde_json::to_string(value)?;
+        // `-U` updates the item in place if it already exists. The command is
+        // fed over stdin so the secret never reaches argv.
+        let command = format!(
+            "add-generic-password -U -a {} -s {} -w {}\n",
+            sh_quote(&account()),
+            sh_quote(SERVICE),
+            sh_quote(&secret),
+        );
+        let mut child = Command::new("/usr/bin/security")
+            .arg("-i")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("cannot run /usr/bin/security")?;
+        child
+            .stdin
+            .take()
+            .context("cannot open the security stdin")?
+            .write_all(command.as_bytes())
+            .context("cannot send the login to security")?;
+        if child.wait().context("security did not run")?.success() {
+            Ok(())
+        } else {
+            bail!("cannot write the login to the Keychain")
+        }
     }
 }
 

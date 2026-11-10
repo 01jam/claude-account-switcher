@@ -101,11 +101,11 @@ export default function SettingsDialog({
                 isDisabled={busy || !settings}
                 onChange={(value) => onChange(toggle.key, value)}
               >
-                <div className="switch-indicator" />
                 <div>
                   <strong>{t(toggle.title)}</strong>
                   <p className="muted">{t(toggle.hint)}</p>
                 </div>
+                <span className="switch-indicator" />
               </Switch>
             ))}
 
@@ -182,7 +182,7 @@ function UpdateSetting({
               : t("update.install")}
         </Button>
         <Button
-          className="btn btn-ghost"
+          className="btn"
           isDisabled={busy}
           onPress={() => {
             api.openReleaseNotes().catch(() => {});

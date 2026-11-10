@@ -1,33 +1,51 @@
+/* Terracotta on warm paper, after Claude's own palette. The structure — type
+   scale, control sizes, radii, motion — is shared with Tailscale Account
+   Switcher; only the colours differ, so the two read as one family in a
+   panel. Keep the two stylesheets in step: a rule changed here wants the same
+   change there. */
+
 :root {
-  --accent: #c25e3e;
-  --accent-fg: #ffffff;
   --bg: #faf9f7;
   --surface: #ffffff;
   --surface-2: #f2efeb;
   --border: #e2ddd6;
+  --border-strong: #cfc8bf;
   --text: #1f1b18;
   --muted: #756d64;
+  --faint: #a59c92;
+  --accent: #c25e3e;
+  --accent-fg: #ffffff;
+  --accent-hover: #ad5233;
   --danger: #b3261e;
   --danger-soft: #fdeceb;
   --radius: 10px;
-  --shadow: 0 1px 2px rgb(31 27 24 / 0.06), 0 8px 24px rgb(31 27 24 / 0.08);
+  --radius-sm: 7px;
+  --shadow: 0 1px 2px rgb(31 27 24 / 0.06), 0 10px 28px rgb(31 27 24 / 0.1);
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, monospace;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --fast: 120ms;
+  --slow: 180ms;
 
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #d97757;
-    --accent-fg: #1a1512;
     --bg: #17140f;
     --surface: #211d18;
     --surface-2: #2b261f;
     --border: #3a342c;
+    --border-strong: #51493f;
     --text: #f0ebe4;
     --muted: #9c9287;
+    --faint: #70675d;
+    --accent: #d97757;
+    --accent-fg: #1a1512;
+    --accent-hover: #e38d6f;
     --danger: #f2857c;
     --danger-soft: #3a201e;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px rgb(0 0 0 / 0.45);
   }
 }
 
@@ -39,19 +57,19 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 14px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-feature-settings: "cv11", "ss01";
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
 
-code {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 0.9em;
-  background: var(--surface-2);
-  padding: 1px 5px;
-  border-radius: 4px;
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: -0.01em;
 }
 
 /* The window itself never scrolls: only the account list does, so the header
@@ -60,9 +78,9 @@ code {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   height: 100vh;
-  padding: 18px;
+  padding: 16px 18px 18px;
   overflow: hidden;
 }
 
@@ -77,15 +95,14 @@ code {
   align-items: stretch;
   justify-content: flex-end;
   height: 32px;
-  margin: -18px -18px -6px;
+  margin: -16px -18px -4px;
 }
 
 .win-controls {
   display: flex;
   flex: none;
   align-items: stretch;
-  /* Set apart from the app's own commands: closing the window is not one. */
-  margin-left: 10px;
+  margin-left: 6px;
 }
 
 .win-control {
@@ -98,6 +115,7 @@ code {
   border: none;
   cursor: pointer;
   outline: none;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 
 .win-control[data-hovered] {
@@ -114,15 +132,20 @@ code {
    window's own colour keeps it reading as a mark on the gear rather than as
    part of the icon. */
 .win-control-dot::after {
-  content: "";
   position: absolute;
-  top: 7px;
-  right: 10px;
-  width: 6px;
-  height: 6px;
-  background: var(--danger);
+  top: 8px;
+  right: 11px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
+  background: var(--accent);
   box-shadow: 0 0 0 2px var(--bg);
+  content: "";
+}
+
+.win-control-close[data-hovered] {
+  color: #fff;
+  background: var(--danger);
 }
 
 /* Fixed to the window rather than sitting in the footer: it belongs to the
@@ -142,9 +165,9 @@ code {
   position: absolute;
   right: 3px;
   bottom: 3px;
-  width: 10px;
-  height: 10px;
-  background: var(--border);
+  width: 9px;
+  height: 9px;
+  background: var(--border-strong);
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
   content: "";
 }
@@ -153,10 +176,7 @@ code {
   background: var(--muted);
 }
 
-.win-control-close[data-hovered] {
-  color: #fff;
-  background: var(--danger);
-}
+/* Header ------------------------------------------------------------------ */
 
 .app-header {
   display: flex;
@@ -173,37 +193,52 @@ code {
 
 .app-header h1 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .subtitle,
 .muted {
-  margin: 2px 0 0;
+  margin: 1px 0 0;
   color: var(--muted);
   font-size: 12.5px;
+}
+
+.subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Buttons ---------------------------------------------------------------- */
 
 .btn {
   display: inline-flex;
+  flex: none;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--surface-2);
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-weight: 500;
+  font-weight: 550;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  outline: none;
+  transition:
+    background var(--fast) var(--ease),
+    border-color var(--fast) var(--ease),
+    color var(--fast) var(--ease);
 }
 
 .btn[data-hovered] {
-  background: var(--border);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
 }
 
 .btn[data-pressed] {
@@ -216,54 +251,73 @@ code {
 }
 
 .btn[data-disabled] {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
 .btn-primary {
+  border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-fg);
 }
 
 .btn-primary[data-hovered] {
-  filter: brightness(1.07);
-  background: var(--accent);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 
 .btn-danger {
-  background: var(--danger-soft);
-  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
 }
 
-.btn-ghost {
-  background: transparent;
-  border-color: var(--border);
-}
-
-.btn-ghost[data-hovered] {
-  background: var(--surface-2);
+.btn-danger[data-hovered] {
+  border-color: var(--danger);
+  background: var(--danger);
+  filter: brightness(1.08);
 }
 
 .btn-icon {
-  padding: 6px;
+  width: 32px;
+  padding: 0;
   border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn-icon[data-hovered] {
+  border-color: transparent;
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .btn-sm {
-  padding: 4px 9px;
+  height: 28px;
+  padding: 0 10px;
   font-size: 12.5px;
+}
+
+.btn-icon.btn-sm {
+  width: 28px;
+  padding: 0;
 }
 
 /* Banners ---------------------------------------------------------------- */
 
 .banner {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+.banner strong {
+  font-weight: 600;
 }
 
 .banner p {
@@ -277,31 +331,21 @@ code {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-.banner-error {
-  border-color: var(--danger);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 12.5px;
-  word-break: break-word;
-}
-
 /* Toasts ------------------------------------------------------------------ */
 
-/* Over the list rather than in the flow. Almost everything these say happened
+/* Over the list rather than in the flow: almost everything these say happened
    while the window was in the tray, and a strip that pushes the accounts down
    whenever the app has something to report moves the cards out from under the
-   pointer. Bottom-anchored because that is where a message the user did not ask
-   for belongs: reading it is optional, and the header is not. */
+   pointer. Just above the footer, so its buttons stay in reach. */
 .toasts {
   position: absolute;
   z-index: 8;
   right: 18px;
-  bottom: 18px;
+  bottom: 70px;
   left: 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* A frame, not a target: the footer keeps working in the gaps between them. */
   pointer-events: none;
 }
 
@@ -309,14 +353,15 @@ code {
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  padding: 10px 10px 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--accent);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--accent);
   box-shadow: var(--shadow);
+  color: var(--accent-fg);
   font-size: 12.5px;
   pointer-events: auto;
-  animation: toast-in 160ms ease-out;
+  animation: toast-in var(--slow) var(--ease);
 }
 
 .toast-error {
@@ -343,13 +388,13 @@ code {
   border-radius: 5px;
   background: none;
   color: inherit;
-  opacity: 0.65;
+  opacity: 0.7;
   cursor: pointer;
   outline: none;
 }
 
 .toast-close[data-hovered] {
-  background: color-mix(in srgb, currentcolor 12%, transparent);
+  background: color-mix(in srgb, currentcolor 14%, transparent);
   opacity: 1;
 }
 
@@ -381,18 +426,21 @@ code {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 10px 12px 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--muted);
   font: inherit;
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 550;
   text-align: left;
   cursor: pointer;
   outline: none;
-  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  transition:
+    border-color var(--fast) var(--ease),
+    background var(--fast) var(--ease),
+    color var(--fast) var(--ease);
 }
 
 .auto-banner span {
@@ -405,7 +453,7 @@ code {
 }
 
 .auto-banner[data-hovered] {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-color: var(--border-strong);
 }
 
 .auto-banner[data-focus-visible] {
@@ -413,7 +461,8 @@ code {
   outline-offset: 1px;
 }
 
-.auto-banner-on {
+.auto-banner-on,
+.auto-banner-on[data-hovered] {
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
   color: var(--accent);
@@ -442,13 +491,13 @@ code {
 
 .list-wrap::before {
   top: 0;
-  height: 14px;
+  height: 10px;
   background: linear-gradient(to bottom, var(--bg), transparent);
 }
 
 .list-wrap::after {
   bottom: 0;
-  height: 18px;
+  height: 14px;
   background: linear-gradient(to top, var(--bg), transparent);
 }
 
@@ -456,12 +505,12 @@ code {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   /* min-height lets the list shrink below its content so it, and not the
      window, is what scrolls. The vertical padding parks the first and last
      card clear of the fades. */
   min-height: 0;
-  padding: 16px 2px 20px;
+  padding: 10px 1px 16px;
   overflow-y: auto;
   /* Hidden, not disabled: the list still scrolls by wheel, drag and keyboard.
      The fades at both ends are what signal there is more to see. */
@@ -480,17 +529,17 @@ code {
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 10px 8px 10px 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   cursor: default;
   outline: none;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
 
 .account[data-hovered] {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-color: var(--border-strong);
 }
 
 .account[data-focus-visible] {
@@ -503,9 +552,58 @@ code {
   cursor: default;
 }
 
+/* The account in use carries the accent: a border twice as heavy, drawn inside
+   so the card does not shift by a pixel when it changes hands, on a tint of
+   the same colour. */
+.account-active,
+.account-active[data-hovered] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  box-shadow: inset 0 0 0 0.5px var(--accent);
+}
+
+.account[data-drop-target] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.account[data-dragging] {
+  opacity: 0.4;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-grip {
+  display: flex;
+  padding: 3px 1px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+  cursor: grab;
+  outline: none;
+}
+
+.account-grip[data-hovered] {
+  color: var(--text);
+}
+
+.account-grip[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .account-avatar {
   display: flex;
   color: var(--muted);
+}
+
+.account-active .account-avatar {
+  color: var(--accent);
 }
 
 .account-body {
@@ -516,60 +614,28 @@ code {
 }
 
 .account-name {
-  font-weight: 550;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .account-meta {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.account-active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-}
-
-.account-active .account-avatar {
-  color: var(--accent);
-}
-
-.account[data-drop-target] {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
-.account[data-dragging] {
-  opacity: 0.4;
-}
-
-.account-row {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-.account-grip {
-  display: flex;
-  padding: 2px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--muted);
-  cursor: grab;
-  outline: none;
-}
-
-.account-grip[data-hovered] {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
-}
-
-.account-grip[data-focus-visible] {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+/* Everything under the name row sits in the text column's own margins. */
+.account-meters,
+.account-usage-note,
+.account-usage-error,
+.account-current,
+.account-use {
+  margin-right: 4px;
+  margin-left: 8px;
 }
 
 /* The one thing on a card that is wrong rather than merely worth knowing: this
@@ -580,7 +646,7 @@ code {
   flex: none;
   padding: 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--danger);
   cursor: pointer;
@@ -599,10 +665,10 @@ code {
 /* Kept numbers, said out loud. Quieter than an error — nothing is broken, the
    figures are simply older than they look. */
 .account-usage-note {
-  width: 100%;
-  margin: 0;
+  margin-top: 0;
+  margin-bottom: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 11.5px;
   text-align: center;
 }
 
@@ -611,11 +677,11 @@ code {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 100%;
-  margin: 0;
+  margin-top: 0;
+  margin-bottom: 0;
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--danger-soft);
   color: var(--danger);
   font-size: 12px;
@@ -623,9 +689,8 @@ code {
 }
 
 /* The primary action of a card, full width under the meters. */
-.account-use {
-  justify-content: center;
-  width: 100%;
+.btn.account-use {
+  width: auto;
 }
 
 .account-current {
@@ -633,11 +698,12 @@ code {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin: 0;
-  padding: 7px;
+  margin-top: 0;
+  margin-bottom: 0;
+  height: 32px;
   color: var(--accent);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 600;
 }
 
 /* Usage meters ------------------------------------------------------------ */
@@ -659,7 +725,7 @@ code {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .meter-label {
@@ -668,7 +734,7 @@ code {
 
 .meter-value {
   font-variant-numeric: tabular-nums;
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .meter-value-hit {
@@ -705,7 +771,7 @@ code {
 
 .meter-fill {
   background: var(--accent);
-  transition: width 300ms ease;
+  transition: width 300ms var(--ease);
 }
 
 .meter-fill-hit {
@@ -732,7 +798,7 @@ code {
    so the marker recedes. It comes back on hover and while dragging. */
 .meter-thumb-idle {
   opacity: 0.2;
-  transition: opacity 120ms ease;
+  transition: opacity var(--fast) var(--ease);
 }
 
 .meter-thumb-idle[data-hovered],
@@ -753,169 +819,14 @@ code {
 .meter-foot {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 11.5px;
   min-height: 1em;
 }
 
-/* Settings ---------------------------------------------------------------- */
-
-.settings {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 4px 0 2px;
-}
-
-.setting {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  outline: none;
-}
-
-.setting[data-hovered] {
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-}
-
-.setting p {
-  margin: 2px 0 0;
-  font-size: 12px;
-}
-
-.setting strong {
-  font-size: 13px;
-  font-weight: 550;
-}
-
-.setting[data-focus-visible] {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.setting[data-disabled] {
-  opacity: 0.55;
-  cursor: default;
-}
-
-/* Tinted with the accent rather than the danger colour: a new version is an
-   offer, not a problem. The row is not a control, so it does not pretend to be
-   hoverable the way the switches above it are. */
-.setting-update {
-  flex-direction: column;
-  gap: 10px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  cursor: default;
-}
-
-/* Stacked, each the card's full width: the primary action first, the notes
-   under it. */
-.setting-update-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.setting-update-actions .btn {
-  justify-content: center;
-}
-
-.switch-indicator {
-  flex: none;
-  width: 32px;
-  height: 19px;
-  margin-top: 1px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 22%, transparent);
-  transition: background 150ms ease;
-}
-
-.switch-indicator::before {
-  display: block;
-  width: 15px;
-  height: 15px;
-  margin: 2px;
-  border-radius: 999px;
-  background: var(--surface);
-  content: "";
-  transition: transform 150ms ease;
-}
-
-.setting[data-selected] .switch-indicator {
-  background: var(--accent);
-}
-
-.setting[data-selected] .switch-indicator::before {
-  transform: translateX(13px);
-}
-
-/* The language row is the one setting that is not a switch: same frame, but the
-   dropdown takes the full width, label above and hint underneath. */
-.setting-select {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  cursor: default;
-}
-
-.setting-select label {
-  font-size: 13px;
-  font-weight: 550;
-}
-
-/* The gap already spaces the hint; .setting p adds a margin the row no longer
-   needs. */
-.setting-select p {
-  margin: 0;
-}
-
-.setting-select .select-trigger {
-  width: 100%;
-  justify-content: space-between;
-}
-
-/* Match the dropdown to the trigger now that the trigger spans the dialog. */
-.popover-select {
-  width: var(--trigger-width);
-}
-
-.select-trigger {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px 6px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  outline: none;
-}
-
-.select-trigger[data-hovered] {
-  background: color-mix(in srgb, var(--text) 8%, var(--surface-2));
-}
-
-.select-trigger[data-focus-visible] {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.select-trigger[data-disabled] {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.menu-item[data-selected] {
-  color: var(--accent);
-  font-weight: 550;
+@media (prefers-reduced-motion: reduce) {
+  .meter-fill {
+    transition: none;
+  }
 }
 
 .empty {
@@ -924,17 +835,28 @@ code {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 28px 16px;
-  border: 1px dashed var(--border);
+  gap: 4px;
+  padding: 28px 20px;
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
   color: var(--muted);
   text-align: center;
 }
 
+.empty > svg {
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.empty strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .empty p {
+  max-width: 36ch;
   margin: 0;
-  max-width: 34ch;
 }
 
 /* Footer, menu, dialogs --------------------------------------------------- */
@@ -942,20 +864,32 @@ code {
 .app-footer {
   display: flex;
   flex: none;
+  align-items: center;
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
-  background: var(--bg);
 }
 
 /* Portalled to the body like the overlay, so it has to outrank it to show above
    a dialog's own select. */
 .popover {
   z-index: 20;
+  min-width: 200px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.popover[data-entering] {
+  animation: pop-in var(--fast) var(--ease);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 
 .menu {
@@ -966,9 +900,9 @@ code {
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   outline: none;
 }
@@ -977,20 +911,31 @@ code {
   background: var(--surface-2);
 }
 
+.menu-item[data-disabled] {
+  color: var(--faint);
+  cursor: default;
+}
+
+.menu-item[data-selected] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .menu-item-danger {
   color: var(--danger);
 }
 
-/* Portalled like the popover, and above it: a tooltip has nothing to lose to. */
+/* Portalled like the popover, and above it: a tooltip has nothing to lose to.
+   On the surface rather than filled, because it carries a second, muted line. */
 .tooltip {
   z-index: 25;
   display: flex;
   flex-direction: column;
   gap: 2px;
   max-width: 280px;
-  padding: 8px 10px;
+  padding: 6px 9px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow);
   color: var(--text);
@@ -999,7 +944,7 @@ code {
 }
 
 .tooltip[data-entering] {
-  animation: fade 120ms ease-out;
+  animation: fade var(--fast) var(--ease);
 }
 
 .tooltip-hint {
@@ -1015,12 +960,12 @@ code {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  background: rgb(0 0 0 / 0.4);
+  padding: 16px;
+  background: rgb(0 0 0 / 0.36);
 }
 
 .overlay[data-entering] {
-  animation: fade 150ms ease-out;
+  animation: fade var(--slow) var(--ease);
 }
 
 @keyframes fade {
@@ -1029,10 +974,18 @@ code {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .overlay[data-entering],
+  .tooltip[data-entering],
+  .popover[data-entering] {
+    animation: none;
+  }
+}
+
 .modal {
   display: flex;
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   /* Bounded by the window. Without this a dialog taller than the window
      overflows a centred flex line in both directions at once, and the half
      above the top edge is somewhere no scrollbar can reach — which is how the
@@ -1042,9 +995,9 @@ code {
 
 .dialog {
   width: 100%;
-  padding: 18px;
+  padding: 18px 20px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
   box-shadow: var(--shadow);
   outline: none;
@@ -1058,32 +1011,23 @@ code {
 }
 
 .dialog h2 {
-  margin: 0 0 10px;
-  font-size: 15px;
-  font-weight: 620;
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.dialog > p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
-}
-
-.steps {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding-left: 20px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.steps li > .btn {
-  display: flex;
-  margin-top: 6px;
-  width: fit-content;
+  margin-top: 18px;
 }
 
 .field {
@@ -1092,22 +1036,204 @@ code {
   gap: 5px;
 }
 
-.field label {
-  color: var(--muted);
+.field > label {
   font-size: 12.5px;
+  font-weight: 600;
 }
 
 .input {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
   user-select: text;
+  outline: none;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+
+.input::placeholder {
+  color: var(--faint);
 }
 
 .input[data-focused] {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Settings ---------------------------------------------------------------- */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  margin: 8px -8px 0;
+}
+
+.setting {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
   outline: none;
+}
+
+.setting + .setting {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.setting p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.setting strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setting .switch-indicator {
+  margin-top: 2px;
+}
+
+.setting[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.setting[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* An offer, not a switch: a framed block at the top of the list, tinted with
+   the accent rather than the danger colour — a new version is an offer, not a
+   problem — and not pretending to be hoverable the way the rows under it are. */
+.setting-update,
+.setting-update + .setting {
+  border-radius: var(--radius-sm);
+}
+
+.setting-update {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  cursor: default;
+}
+
+.setting-update + .setting {
+  border-top: 0;
+}
+
+/* Stacked, each the card's full width: the primary action first, the notes
+   under it, and neither depends on the other's label length. */
+.setting-update-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The on/off switch. */
+.switch-indicator {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background var(--slow) var(--ease);
+}
+
+.switch-indicator::before {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  content: "";
+  transition: transform var(--slow) var(--ease);
+}
+
+[data-selected] > .switch-indicator {
+  background: var(--accent);
+}
+
+[data-selected] > .switch-indicator::before {
+  transform: translateX(14px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-indicator,
+  .switch-indicator::before {
+    transition: none;
+  }
+}
+
+/* The language row is the one setting that is not a switch: same frame, but the
+   dropdown takes the full width, label above and hint underneath. */
+.setting-select {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: default;
+}
+
+.setting-select label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The gap already spaces the hint; .setting p adds a margin the row no longer
+   needs. */
+.setting-select p {
+  margin: 0;
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.select-trigger[data-hovered] {
+  background: var(--surface-2);
+}
+
+.select-trigger[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.select-trigger[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Match the dropdown to the trigger now that the trigger spans the dialog. */
+.popover-select {
+  width: var(--trigger-width);
 }

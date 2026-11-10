@@ -181,7 +181,7 @@ export default function AccountList({
 
                 <MenuTrigger>
                   <Button
-                    className="btn btn-ghost btn-icon"
+                    className="btn btn-icon"
                     aria-label={t("accounts.actions_for", { name: profile.label })}
                   >
                     <IconDotsVertical size={18} />
@@ -303,7 +303,7 @@ export default function AccountList({
             <p className="muted">{t("accounts.delete_body")}</p>
             <div className="dialog-actions">
               <Button
-                className="btn btn-ghost"
+                className="btn"
                 onPress={() => setConfirming(null)}
               >
                 {t("app.cancel")}
@@ -366,7 +366,7 @@ function RenameDialog({
               <Input className="input" />
             </TextField>
             <div className="dialog-actions">
-              <Button className="btn btn-ghost" onPress={onClose}>
+              <Button className="btn" onPress={onClose}>
                 {t("app.cancel")}
               </Button>
               <Button className="btn btn-primary" type="submit">

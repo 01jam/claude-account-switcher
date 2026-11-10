@@ -290,7 +290,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         </div>
         <div className="app-header-actions">
           <Button
-            className="btn btn-ghost btn-icon"
+            className="btn btn-icon"
             aria-label={t("app.refresh")}
             isDisabled={busy}
             onPress={() =>
@@ -376,7 +376,7 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
         </Button>
         {current?.loggedIn && !current.unsaved && (
           <Button
-            className="btn btn-ghost"
+            className="btn"
             isDisabled={busy}
             onPress={() => run(() => api.saveCurrentAccount())}
           >

@@ -158,4 +158,5 @@ errors:
   download_truncated: il download non è arrivato intero — non è stato installato niente
   install_failed: "il gestore pacchetti è uscito con {status}"
   no_update: nessuna versione più recente da installare
+  no_pkexec: "pkexec non è disponibile: installa il pacchetto da un terminale con sudo"
   no_opener: "non riesco a passare il file al desktop: {error}"

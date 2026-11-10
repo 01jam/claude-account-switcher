@@ -150,4 +150,5 @@ errors:
   download_truncated: the download did not arrive whole — nothing was installed
   install_failed: "the package manager exited with {status}"
   no_update: no newer version to install
+  no_pkexec: "pkexec is not available: install the package from a terminal with sudo"
   no_opener: "cannot hand the file to the desktop: {error}"

@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
+use crate::actions::which;
 use crate::i18n;
 
 /// Where the releases are. Hard-coded on purpose: an app that took this from a
@@ -182,10 +184,10 @@ fn pick_asset<'a>(assets: &'a [Asset], suffix: &str) -> Option<&'a Asset> {
 #[cfg(target_os = "linux")]
 fn install_program(asset_name: &str) -> Option<(std::path::PathBuf, &'static [&'static str])> {
     // Nothing here runs as root except through polkit's own dialog.
-    crate::actions::which("pkexec")?;
+    which("pkexec")?;
 
     if asset_name.ends_with(".deb") {
-        crate::actions::which("apt-get").map(|bin| (bin, &["install", "-y"][..]))
+        which("apt-get").map(|bin| (bin, &["install", "-y"][..]))
     } else if asset_name.ends_with(".rpm") {
         [
             ("dnf", &["install", "-y"][..]),
@@ -193,7 +195,7 @@ fn install_program(asset_name: &str) -> Option<(std::path::PathBuf, &'static [&'
             ("rpm", &["-U"][..]),
         ]
         .into_iter()
-        .find_map(|(bin, args)| crate::actions::which(bin).map(|path| (path, args)))
+        .find_map(|(bin, args)| which(bin).map(|path| (path, args)))
     } else {
         // An AppImage is not installed. It is a file kept wherever its owner
         // decided to keep it, and moving it there is not a decision this app
@@ -346,8 +348,14 @@ pub async fn fetch_and_install(available: &Available) -> Result<Outcome> {
     };
 
     let file = path.to_string_lossy().to_string();
+    // The same absolute-path rule as the package manager: `install_program`
+    // only answers when pkexec was found, so the lookup cannot come back empty.
+    #[cfg(target_os = "linux")]
+    let pkexec = which("pkexec").ok_or_else(|| anyhow!(i18n::t("errors.no_pkexec")))?;
+    #[cfg(not(target_os = "linux"))]
+    let pkexec = std::path::PathBuf::from("pkexec");
     let status = tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("pkexec")
+        std::process::Command::new(pkexec)
             .arg(program)
             .args(args)
             .arg(&file)
@@ -402,16 +410,17 @@ fn open_with_desktop(target: &str) -> Result<()> {
     #[cfg(not(target_os = "macos"))]
     let opener = "xdg-open";
 
-    Command::new(opener)
-        .arg(target)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| {
-            anyhow!(i18n::t_args(
-                "errors.no_opener",
-                &[("error", &e.to_string())]
-            ))
-        })
+    let mut child = Command::new(opener).arg(target).spawn().map_err(|e| {
+        anyhow!(i18n::t_args(
+            "errors.no_opener",
+            &[("error", &e.to_string())]
+        ))
+    })?;
+    // Reaped off to the side, or every page opened leaves a zombie behind.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

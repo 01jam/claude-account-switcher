@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Button,
   Dialog,
@@ -29,6 +30,8 @@ type Props = {
    *  the title bar's gear. */
   update: UpdateStatus | null;
   onInstallUpdate: () => void;
+  /** Resolves with what GitHub said; rejects when it could not be asked. */
+  onCheckUpdate: () => Promise<UpdateStatus>;
 };
 
 const TOGGLES: { key: ToggleKey; title: string; hint: string }[] = [
@@ -67,6 +70,7 @@ export default function SettingsDialog({
   onLanguageChange,
   update,
   onInstallUpdate,
+  onCheckUpdate,
 }: Props) {
   const t = useT();
 
@@ -117,6 +121,8 @@ export default function SettingsDialog({
             />
           </div>
 
+          <UpdateCheck t={t} current={update?.current ?? null} onCheck={onCheckUpdate} />
+
           <div className="dialog-actions">
             <Button className="btn btn-primary" onPress={onClose}>
               {t("app.close")}
@@ -125,6 +131,46 @@ export default function SettingsDialog({
         </Dialog>
       </Modal>
     </ModalOverlay>
+  );
+}
+
+/** The check runs at launch and every six hours on its own; this is for not
+ *  waiting. A newer version answers by turning up as the offer at the top of
+ *  this dialog, so the line here only has to say the other two outcomes. It
+ *  lives inside the dialog, so its answer starts over each time Settings
+ *  opens rather than going stale on screen. */
+function UpdateCheck({
+  t,
+  current,
+  onCheck,
+}: {
+  t: Translate;
+  current: string | null;
+  onCheck: () => Promise<UpdateStatus>;
+}) {
+  const [state, setState] = useState<"idle" | "checking" | "latest" | "failed">("idle");
+
+  const check = async () => {
+    setState("checking");
+    try {
+      const status = await onCheck();
+      setState(status.available ? "idle" : "latest");
+    } catch {
+      setState("failed");
+    }
+  };
+
+  return (
+    <div className="settings-foot">
+      <div>
+        {current && <p>{t("settings.version", { version: current })}</p>}
+        {state === "latest" && <p>{t("update.up_to_date")}</p>}
+        {state === "failed" && <p className="settings-foot-error">{t("update.check_failed")}</p>}
+      </div>
+      <Button className="btn btn-sm" isDisabled={state === "checking"} onPress={check}>
+        {state === "checking" ? t("update.checking") : t("update.check")}
+      </Button>
+    </div>
   );
 }
 

@@ -192,6 +192,8 @@ export const api = {
   setLanguage: (tag: Lang | null) => invoke<void>("set_language", { tag }),
 
   updateStatus: () => invoke<UpdateStatus>("update_status"),
+  /** Asks GitHub now instead of waiting for the next scheduled check. */
+  checkUpdate: () => invoke<UpdateStatus>("check_update"),
   /** Downloads the package and, where the machine has a package manager for
    *  it, installs it — the password prompt in the middle is polkit's own. */
   installUpdate: () => invoke<InstallOutcome>("install_update"),

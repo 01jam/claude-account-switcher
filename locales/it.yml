@@ -118,12 +118,17 @@ settings:
   language_title: Lingua
   language_hint: Cambia subito, senza riavviare l'app.
   language_auto: Automatica ({name})
+  version: "Versione {version}"
 
 update:
   badge: È disponibile una nuova versione
   title: Aggiornamento
   available: "È disponibile la versione {version}. Stai usando la {current}."
   notes: Note di rilascio
+  check: Cerca aggiornamenti
+  checking: Controllo in corso…
+  up_to_date: Stai già usando l'ultima versione.
+  check_failed: Il controllo non è andato a buon fine. Riprova tra un po'.
   install: Scarica e installa
   install_hint: "Scarica il pacchetto e lo installa con il gestore pacchetti di sistema. La richiesta della password nel mezzo è di sistema: questa app non la vede mai."
   handoff_hint: "Scarica il pacchetto e te lo mostra: su questo sistema metterlo al suo posto è un passaggio che fai tu."

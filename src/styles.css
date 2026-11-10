@@ -1237,3 +1237,24 @@ code,
 .popover-select {
   width: var(--trigger-width);
 }
+
+/* The version, and the one way to ask about a newer one without waiting. */
+.settings-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-foot p {
+  margin: 0;
+}
+
+.settings-foot-error {
+  color: var(--danger);
+}

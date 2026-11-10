@@ -147,6 +147,7 @@ const answers: Record<string, unknown> = {
   get_settings: settings,
   fetch_usage: usage,
   update_status: update,
+  check_update: update,
   startup_pick: null,
   pending_notices: notices,
   token_errors:

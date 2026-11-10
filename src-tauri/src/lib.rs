@@ -370,6 +370,19 @@ fn update_status(latest: State<'_, update::Latest>) -> update::Status {
     }
 }
 
+/// Look now rather than at the next turn of the clock: the button in Settings.
+/// Unlike the background check, a failure here is reported — someone pressed
+/// a button and is waiting for an answer.
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<update::Status, String> {
+    let found = to_string_err(update::check().await)?;
+    record_update(&app, found.clone());
+    Ok(update::Status {
+        current: update::running_version().to_string(),
+        available: found,
+    })
+}
+
 /// Show what changed, in the browser.
 #[tauri::command]
 fn open_release_notes(latest: State<'_, update::Latest>) -> Result<(), String> {
@@ -614,21 +627,23 @@ async fn poll_usage(app: AppHandle) {
     }
 }
 
+/// Keep what a check found, and announce it if it is news. Only when it
+/// changes: the check outlives many windows, and re-announcing the same version
+/// every six hours would make the badge something to dismiss rather than
+/// something to read.
+fn record_update(app: &AppHandle, found: Option<update::Available>) {
+    if app.state::<update::Latest>().set(found.clone()) {
+        if let Some(available) = found {
+            let _ = app.emit("update-available", available);
+        }
+    }
+}
+
 /// Look for a newer release, at launch and a few times a day after that.
 async fn poll_updates(app: AppHandle) {
     loop {
         match update::check().await {
-            Ok(found) => {
-                let latest = app.state::<update::Latest>();
-                // Only when it changes: the check outlives many windows, and
-                // re-announcing the same version every six hours would make the
-                // badge something to dismiss rather than something to read.
-                if latest.set(found.clone()) {
-                    if let Some(available) = found {
-                        let _ = app.emit("update-available", available);
-                    }
-                }
-            }
+            Ok(found) => record_update(&app, found),
             // Offline, rate-limited, or the API changed shape. None of it is
             // worth interrupting anyone over, and the next pass costs nothing.
             Err(e) => eprintln!("update check: {e:#}"),
@@ -840,6 +855,7 @@ pub fn run() {
             set_autostart,
             set_language,
             update_status,
+            check_update,
             install_update,
             open_release_notes,
         ])

@@ -399,6 +399,11 @@ function Switcher({ onLanguage }: { onLanguage: (lang: Lang) => void }) {
           run(() => SETTERS[key](value));
         }}
         update={update}
+        onCheckUpdate={async () => {
+          const status = await api.checkUpdate();
+          setUpdate(status);
+          return status;
+        }}
         onInstallUpdate={() =>
           run(async () => {
             const outcome = await api.installUpdate();

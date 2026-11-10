@@ -110,12 +110,17 @@ settings:
   language_title: Language
   language_hint: Applies straight away, no restart needed.
   language_auto: Automatic ({name})
+  version: "Version {version}"
 
 update:
   badge: A new version is available
   title: Update
   available: "Version {version} is available. You are on {current}."
   notes: Release notes
+  check: Check for updates
+  checking: Checking…
+  up_to_date: You are on the latest version.
+  check_failed: The check did not get through. Try again in a while.
   install: Download and install
   install_hint: Downloads the package and installs it with the system package manager. The password prompt in the middle is the system's own — this app never sees it.
   handoff_hint: "Downloads the package and shows it to you: on this system putting it in place is a step you take yourself."

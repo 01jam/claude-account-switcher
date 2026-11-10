@@ -313,7 +313,10 @@ pub async fn fetch_and_install(available: &Available) -> Result<Outcome> {
 
     // A short read is worth catching before it reaches a program running as
     // root, however unlikely a package manager is to be fooled by one.
-    if available.asset_size.is_some_and(|size| bytes.len() as u64 != size) {
+    if available
+        .asset_size
+        .is_some_and(|size| bytes.len() as u64 != size)
+    {
         return Err(anyhow!(i18n::t("errors.download_truncated")));
     }
 
@@ -403,7 +406,12 @@ fn open_with_desktop(target: &str) -> Result<()> {
         .arg(target)
         .spawn()
         .map(|_| ())
-        .map_err(|e| anyhow!(i18n::t_args("errors.no_opener", &[("error", &e.to_string())])))
+        .map_err(|e| {
+            anyhow!(i18n::t_args(
+                "errors.no_opener",
+                &[("error", &e.to_string())]
+            ))
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +481,10 @@ mod tests {
             (".AppImage", "claude-account-switcher_0.2.2_amd64.AppImage"),
             (".dmg", "claude-account-switcher_0.2.2_universal.dmg"),
         ] {
-            assert_eq!(pick_asset(&release, suffix).map(|a| a.name.as_str()), Some(expected));
+            assert_eq!(
+                pick_asset(&release, suffix).map(|a| a.name.as_str()),
+                Some(expected)
+            );
         }
     }
 

@@ -237,12 +237,17 @@ async fn exchange(code: &str, state: &str, verifier: &str) -> Result<Tokens> {
     let status = response.status();
     if !status.is_success() {
         let refusal: oauth::Refusal = response.json().await.unwrap_or_default();
-        let mut message =
-            i18n::t_args("errors.api_status", &[("status", &status.as_u16().to_string())]);
+        let mut message = i18n::t_args(
+            "errors.api_status",
+            &[("status", &status.as_u16().to_string())],
+        );
         if let Some(summary) = refusal.summary() {
             message = format!("{message} ({summary})");
         }
-        return Err(anyhow!(i18n::t_args("errors.login_failed", &[("error", &message)])));
+        return Err(anyhow!(i18n::t_args(
+            "errors.login_failed",
+            &[("error", &message)]
+        )));
     }
     Ok(response.json().await?)
 }
@@ -270,7 +275,10 @@ async fn fetch_profile(access_token: &str) -> Result<Value> {
 
 /// `claude_max` → `max`, as the CLI files it under `subscriptionType`.
 fn subscription_of(profile: &Value) -> Option<&'static str> {
-    match profile.pointer("/organization/organization_type")?.as_str()? {
+    match profile
+        .pointer("/organization/organization_type")?
+        .as_str()?
+    {
         "claude_max" => Some("max"),
         "claude_pro" => Some("pro"),
         "claude_enterprise" => Some("enterprise"),
@@ -323,9 +331,18 @@ fn account_of(profile: &Value) -> Result<Value> {
     put("hasExtraUsageEnabled", org.get("has_extra_usage_enabled"));
     put("billingType", org.get("billing_type"));
     put("subscriptionCreatedAt", org.get("subscription_created_at"));
-    put("ccOnboardingFlags", Some(org.get("cc_onboarding_flags").unwrap_or(&json!({}))));
-    put("claudeCodeTrialEndsAt", org.get("claude_code_trial_ends_at"));
-    put("claudeCodeTrialDurationDays", org.get("claude_code_trial_duration_days"));
+    put(
+        "ccOnboardingFlags",
+        Some(org.get("cc_onboarding_flags").unwrap_or(&json!({}))),
+    );
+    put(
+        "claudeCodeTrialEndsAt",
+        org.get("claude_code_trial_ends_at"),
+    );
+    put(
+        "claudeCodeTrialDurationDays",
+        org.get("claude_code_trial_duration_days"),
+    );
     put("seatTier", org.get("seat_tier"));
     put("organizationName", org.get("name"));
     put("profileFetchedAt", Some(&json!(store::now_ms())));
@@ -338,7 +355,12 @@ fn account_of(profile: &Value) -> Result<Value> {
 /// `browser` follows the account that actually signed in: a re-login of one
 /// account that ended up as another hands that session to the other, since it
 /// is the other's cookies that folder now holds.
-fn save(target: Option<&str>, browser: &str, credentials: &Value, account: &Value) -> Result<Profile> {
+fn save(
+    target: Option<&str>,
+    browser: &str,
+    credentials: &Value,
+    account: &Value,
+) -> Result<Profile> {
     let email = claude::email_of(account);
     let existing = store::list()?
         .into_iter()
@@ -374,7 +396,9 @@ fn save(target: Option<&str>, browser: &str, credentials: &Value, account: &Valu
             profile.id
         }
         None => {
-            let label = email.clone().unwrap_or_else(|| i18n::t("accounts.default_label"));
+            let label = email
+                .clone()
+                .unwrap_or_else(|| i18n::t("accounts.default_label"));
             let id = store::unique_id(&label)?;
             let meta = Meta {
                 label,
@@ -435,7 +459,10 @@ pub async fn run(app: &AppHandle, target: Option<&str>) -> Result<Profile> {
         let (code, returned) = match ask(app, url, &browser).await? {
             Answer::Code { code, state } => (code, state),
             Answer::Refused(reason) => {
-                return Err(anyhow!(i18n::t_args("errors.login_failed", &[("error", &reason)])))
+                return Err(anyhow!(i18n::t_args(
+                    "errors.login_failed",
+                    &[("error", &reason)]
+                )))
             }
         };
         if returned != state {
@@ -488,9 +515,12 @@ mod tests {
 
     #[test]
     fn only_the_callback_page_counts_as_the_redirect() {
-        let hit = Url::parse("https://platform.claude.com/oauth/code/callback?code=a&state=b").unwrap();
+        let hit =
+            Url::parse("https://platform.claude.com/oauth/code/callback?code=a&state=b").unwrap();
         assert!(is_redirect(&hit));
-        assert!(!is_redirect(&Url::parse("https://claude.ai/login").unwrap()));
+        assert!(!is_redirect(
+            &Url::parse("https://claude.ai/login").unwrap()
+        ));
         assert!(!is_redirect(
             &Url::parse("https://platform.claude.com/oauth/code/success").unwrap()
         ));

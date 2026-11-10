@@ -135,9 +135,7 @@ fn workaround_fractional_scaling() {
     let fractional = std::process::Command::new("gsettings")
         .args(["get", "org.gnome.mutter", "experimental-features"])
         .output()
-        .map(|out| {
-            String::from_utf8_lossy(&out.stdout).contains("scale-monitor-framebuffer")
-        })
+        .map(|out| String::from_utf8_lossy(&out.stdout).contains("scale-monitor-framebuffer"))
         .unwrap_or(false);
 
     if fractional {
@@ -394,9 +392,7 @@ fn open_release_notes(latest: State<'_, update::Latest>) -> Result<(), String> {
 /// this is polkit's own; nothing of it passes through here.
 #[tauri::command]
 async fn install_update(latest: State<'_, update::Latest>) -> Result<update::Outcome, String> {
-    let available = latest
-        .get()
-        .ok_or_else(|| i18n::t("errors.no_update"))?;
+    let available = latest.get().ok_or_else(|| i18n::t("errors.no_update"))?;
     to_string_err(update::fetch_and_install(&available).await)
 }
 
@@ -732,10 +728,7 @@ impl TokenErrors {
 
 /// Fold one renewal pass into the failure map, push it to the window when it
 /// moved, and hand back the accounts whose failure is new.
-fn record_failures<'a>(
-    app: &AppHandle,
-    outcomes: &'a [oauth::Outcome],
-) -> Vec<&'a oauth::Outcome> {
+fn record_failures<'a>(app: &AppHandle, outcomes: &'a [oauth::Outcome]) -> Vec<&'a oauth::Outcome> {
     let errors = app.state::<TokenErrors>();
     let folded = errors.fold(outcomes);
     if folded.changed {

@@ -78,7 +78,10 @@ fn stale_note(usage: &Usage) -> Option<String> {
     Some(if minutes < 60 {
         i18n::t_args("usage.stale_minutes", &[("minutes", &minutes.to_string())])
     } else {
-        i18n::t_args("usage.stale_hours", &[("hours", &(minutes / 60).to_string())])
+        i18n::t_args(
+            "usage.stale_hours",
+            &[("hours", &(minutes / 60).to_string())],
+        )
     })
 }
 
@@ -126,7 +129,13 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let usage = app.state::<Cache>().snapshot();
 
     if profiles.is_empty() {
-        let empty = MenuItem::with_id(app, "noop", i18n::t("tray.no_accounts"), false, None::<&str>)?;
+        let empty = MenuItem::with_id(
+            app,
+            "noop",
+            i18n::t("tray.no_accounts"),
+            false,
+            None::<&str>,
+        )?;
         menu.append(&empty)?;
     } else {
         for p in &profiles {

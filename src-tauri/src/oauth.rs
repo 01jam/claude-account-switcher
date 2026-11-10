@@ -212,7 +212,13 @@ fn merged(credentials: &Value, token: &TokenResponse, previous_refresh: &str) ->
     );
     oauth.insert(
         "expiresAt".into(),
-        json!(store::now_ms() + token.expires_in.map(|s| s * 1000).unwrap_or(FALLBACK_LIFETIME_MS)),
+        json!(
+            store::now_ms()
+                + token
+                    .expires_in
+                    .map(|s| s * 1000)
+                    .unwrap_or(FALLBACK_LIFETIME_MS)
+        ),
     );
     if let Some(scope) = &token.scope {
         let scopes: Vec<&str> = scope.split(' ').filter(|s| !s.is_empty()).collect();
@@ -264,7 +270,10 @@ async fn request_once(refresh_token: &str, scopes: &[String]) -> Result<TokenRes
         }
         .into());
     }
-    let mut message = i18n::t_args("errors.api_status", &[("status", &status.as_u16().to_string())]);
+    let mut message = i18n::t_args(
+        "errors.api_status",
+        &[("status", &status.as_u16().to_string())],
+    );
     if let Some(summary) = refusal.summary() {
         message = format!("{message} ({summary})");
     }
@@ -479,9 +488,15 @@ mod tests {
         let in_ten_minutes = store::now_ms() + 10 * 60 * 1000;
         let creds = credentials(Some(in_ten_minutes));
 
-        assert!(!due(&creds, LIVE_MARGIN_MS), "five minutes of margin is not yet ten");
+        assert!(
+            !due(&creds, LIVE_MARGIN_MS),
+            "five minutes of margin is not yet ten"
+        );
         assert!(due(&creds, STORED_MARGIN_MS), "thirty is");
-        assert!(due(&credentials(Some(store::now_ms() - 1)), 0), "expired is always due");
+        assert!(
+            due(&credentials(Some(store::now_ms() - 1)), 0),
+            "expired is always due"
+        );
     }
 
     /// An account with no recorded expiry is left alone by the keeper — but an

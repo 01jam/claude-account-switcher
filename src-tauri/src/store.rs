@@ -152,7 +152,8 @@ pub fn unique_id(label: &str) -> Result<String> {
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &PathBuf) -> Result<T> {
-    let text = fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let text =
+        fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
     Ok(serde_json::from_str(&text)?)
 }
 
@@ -188,7 +189,11 @@ pub fn save(id: &str, meta: &Meta, credentials: &Value, account: &Value) -> Resu
 /// Replace an account's stored tokens, leaving its metadata alone. What a
 /// renewal writes: the credentials changed, nothing else about the account did.
 pub fn save_credentials(id: &str, credentials: &Value) -> Result<()> {
-    write_json(&profile_dir(id)?.join("credentials.json"), credentials, true)
+    write_json(
+        &profile_dir(id)?.join("credentials.json"),
+        credentials,
+        true,
+    )
 }
 
 pub fn save_meta(id: &str, meta: &Meta) -> Result<()> {
@@ -224,7 +229,7 @@ pub fn delete(id: &str) -> Result<()> {
     if dir.exists() {
         fs::remove_dir_all(&dir)?;
     }
-    if active()? .as_deref() == Some(id) {
+    if active()?.as_deref() == Some(id) {
         set_active(None)?;
     }
     Ok(())
@@ -273,7 +278,9 @@ pub fn list() -> Result<Vec<Profile>> {
 /// place at the end.
 pub fn reorder(ids: &[String]) -> Result<()> {
     for (index, id) in ids.iter().enumerate() {
-        let Ok(mut meta) = load_meta(id) else { continue };
+        let Ok(mut meta) = load_meta(id) else {
+            continue;
+        };
         meta.order = Some(index as u32);
         save_meta(id, &meta)?;
     }

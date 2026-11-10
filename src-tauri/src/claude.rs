@@ -39,10 +39,11 @@ pub fn config_path() -> Result<PathBuf> {
 
 fn read_json(path: &PathBuf) -> Result<Option<Value>> {
     match fs::read_to_string(path) {
-        Ok(text) => Ok(Some(
-            serde_json::from_str(&text)
-                .with_context(|| format!("{} is not valid JSON", path.display()))?,
-        )),
+        Ok(text) => {
+            Ok(Some(serde_json::from_str(&text).with_context(|| {
+                format!("{} is not valid JSON", path.display())
+            })?))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
     }
@@ -341,10 +342,7 @@ pub fn subscription_of(credentials: &Value) -> Option<String> {
 
 /// Expiry of the OAuth access token, epoch milliseconds.
 pub fn expires_at_of(credentials: &Value) -> Option<u64> {
-    credentials
-        .get("claudeAiOauth")?
-        .get("expiresAt")?
-        .as_u64()
+    credentials.get("claudeAiOauth")?.get("expiresAt")?.as_u64()
 }
 
 #[cfg(test)]
@@ -354,7 +352,8 @@ mod tests {
     /// A directory of our own: these tests exercise the protocol, and the real
     /// lock sits next to a login nobody should be poking at from a test.
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("claude-switch-{name}-{}.lock", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("claude-switch-{name}-{}.lock", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
     }

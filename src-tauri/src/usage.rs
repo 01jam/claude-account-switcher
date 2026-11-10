@@ -149,10 +149,7 @@ impl Usage {
     /// Like `hits`, but fires `margin` points early — "about to run out" rather
     /// than "out". The floor keeps a very low threshold from warning always.
     pub fn approaching(&self, five_hour: f64, seven_day: f64, margin: f64) -> Option<Hit> {
-        self.hits(
-            (five_hour - margin).max(1.0),
-            (seven_day - margin).max(1.0),
-        )
+        self.hits((five_hour - margin).max(1.0), (seven_day - margin).max(1.0))
     }
 
     /// The weekly room left, spread over the days that window still has to
@@ -233,7 +230,8 @@ fn epoch_ms(iso: &str) -> Option<i64> {
         None => (field.parse::<i64>().ok()?, 0),
     };
 
-    let seconds = days_from_civil(year, month, day) * 86_400 + hours * 3_600 + minutes * 60 + seconds;
+    let seconds =
+        days_from_civil(year, month, day) * 86_400 + hours * 3_600 + minutes * 60 + seconds;
     Some(seconds * 1_000 + millis - offset)
 }
 
@@ -560,7 +558,9 @@ impl Cache {
     /// When this account may be asked again, if it is in a cooldown.
     pub fn retry_at(&self, id: &str) -> Option<u64> {
         let map = self.cooldowns.lock().ok()?;
-        map.get(id).copied().filter(|until| *until > store::now_ms())
+        map.get(id)
+            .copied()
+            .filter(|until| *until > store::now_ms())
     }
 
     /// The first moment any account comes back, for a UI that has to say
@@ -574,7 +574,10 @@ impl Cache {
 
     fn start_cooldown(&self, id: &str, for_duration: Duration) {
         if let Ok(mut map) = self.cooldowns.lock() {
-            map.insert(id.to_string(), store::now_ms() + for_duration.as_millis() as u64);
+            map.insert(
+                id.to_string(),
+                store::now_ms() + for_duration.as_millis() as u64,
+            );
         }
         self.save();
     }
@@ -693,8 +696,7 @@ pub async fn for_profile(cache: &Cache, id: &str, force: bool) -> Result<Usage> 
         }
     }
 
-    let token =
-        access_token_of(&credentials).ok_or_else(|| anyhow!(i18n::t("errors.no_token")))?;
+    let token = access_token_of(&credentials).ok_or_else(|| anyhow!(i18n::t("errors.no_token")))?;
 
     match fetch(&token).await {
         Ok(usage) => {
@@ -704,8 +706,7 @@ pub async fn for_profile(cache: &Cache, id: &str, force: bool) -> Result<Usage> 
         Err(e) if e.downcast_ref::<Unauthorized>().is_some() => {
             // `expiresAt` said the token was good and the endpoint disagreed;
             // the endpoint is the one that knows. One renewal, one retry.
-            let Ok(Some(renewed)) = oauth::renew(id, active.as_deref(), oauth::FORCE).await
-            else {
+            let Ok(Some(renewed)) = oauth::renew(id, active.as_deref(), oauth::FORCE).await else {
                 return Err(e);
             };
             let token =
@@ -766,7 +767,10 @@ mod tests {
             five.resets_at.as_deref(),
             Some("2026-08-28T16:59:59.832047+00:00")
         );
-        assert_eq!(usage.seven_day.expect("seven_day present").utilization, 29.0);
+        assert_eq!(
+            usage.seven_day.expect("seven_day present").utilization,
+            29.0
+        );
     }
 
     #[test]
@@ -790,7 +794,9 @@ mod tests {
 
         assert!(usage.hits(100.0, 100.0).is_none());
 
-        let hit = usage.hits(100.0, 29.0).expect("seven-day hit at exactly 29");
+        let hit = usage
+            .hits(100.0, 29.0)
+            .expect("seven-day hit at exactly 29");
         assert_eq!(hit.kind, Kind::SevenDay);
         assert_eq!(hit.utilization, 29.0);
 
@@ -979,7 +985,10 @@ mod tests {
         assert!(cache.path.is_none());
         cache.start_cooldown("spent", Duration::from_secs(600));
         cache.save(); // Would be a write with a path; here it is a no-op.
-        assert!(cache.in_cooldown("spent"), "and the state is still in memory");
+        assert!(
+            cache.in_cooldown("spent"),
+            "and the state is still in memory"
+        );
     }
 
     #[test]

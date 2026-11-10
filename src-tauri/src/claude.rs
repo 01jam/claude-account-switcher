@@ -171,7 +171,14 @@ mod keychain {
     /// there is no login here, and the file backend is tried next.
     pub fn read() -> Result<Option<Value>> {
         let out = match Command::new("/usr/bin/security")
-            .args(["find-generic-password", "-w", "-a", &account(), "-s", SERVICE])
+            .args([
+                "find-generic-password",
+                "-w",
+                "-a",
+                &account(),
+                "-s",
+                SERVICE,
+            ])
             .output()
         {
             Ok(out) => out,
@@ -216,11 +223,16 @@ mod keychain {
             .context("cannot open the security stdin")?
             .write_all(command.as_bytes())
             .context("cannot send the login to security")?;
-        if child.wait().context("security did not run")?.success() {
-            Ok(())
-        } else {
+        let status = child.wait().context("security did not run")?;
+        // `security -i` answers for the session, not for the command in it: a
+        // refused write can still exit 0, and its message went to /dev/null.
+        // Reading the item back is what says whether the login actually
+        // landed — without it a failed switch would look like a done one,
+        // with Claude Code still on the old account.
+        if !status.success() || read()?.as_ref() != Some(value) {
             bail!("cannot write the login to the Keychain")
         }
+        Ok(())
     }
 }
 

@@ -111,13 +111,13 @@ const settings: Settings = {
 const params = new URLSearchParams(location.search);
 
 const update: UpdateStatus = params.get("update") === "0"
-  ? { current: "0.2.7", available: null }
+  ? { current: "0.2.12", available: null }
   : {
-      current: "0.2.7",
+      current: "0.2.12",
       available: {
-        version: "0.2.8",
-        notesUrl: "https://github.com/01jam/claude-account-switcher/releases/tag/v0.2.8",
-        assetName: "claude-account-switcher_0.2.8_amd64.deb",
+        version: "0.2.13",
+        notesUrl: "https://github.com/01jam/claude-account-switcher/releases/tag/v0.2.13",
+        assetName: "claude-account-switcher_0.2.13_amd64.deb",
         assetUrl: "https://example.invalid",
         assetSize: 3_175_268,
         installs: true,
@@ -135,7 +135,7 @@ const notices: Notice[] =
           level: "info",
         },
         {
-          text: "Cannot renew \u201cWork\u201d: the refresh token was refused \u2014 sign in again with `claude`",
+          text: "Cannot renew \u201cWork\u201d: the refresh token was refused (invalid_grant) \u2014 use \u201cSign in again\u201d from the account menu",
           level: "error",
         },
       ]
@@ -151,7 +151,7 @@ const answers: Record<string, unknown> = {
   pending_notices: notices,
   token_errors:
     params.get("token-error") === "1"
-      ? { work: "the refresh token was refused — sign in again with `claude`" }
+      ? { work: "the refresh token was refused (invalid_grant) — use “Sign in again” from the account menu" }
       : {},
 };
 

@@ -13,7 +13,11 @@ use crate::store::Profile;
 use crate::usage::{self, Cache, Usage};
 use crate::{actions, store};
 
-pub const TRAY_ID: &str = "main";
+/// On Linux the id names the icon file in `$XDG_RUNTIME_DIR/tray-icon/`, which
+/// every tray-icon app shares. A generic id like "main" collides with any other
+/// Tauri app that picked it too: whichever swaps its icon first deletes the file
+/// the other's indicator points at, and the panel shows "…" in its place.
+pub const TRAY_ID: &str = "studio.hund.claude-switch";
 const PROFILE_PREFIX: &str = "profile:";
 
 /// A switch glyph rather than the app icon: in a panel full of app icons, what

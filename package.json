@@ -2,7 +2,7 @@
   "name": "claude-account-switcher",
   "private": true,
   "license": "MIT",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "type": "module",
   "scripts": {
     "dev": "vite",
